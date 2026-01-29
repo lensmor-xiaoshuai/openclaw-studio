@@ -6,9 +6,8 @@ import { resolveAgentWorkspaceDir } from "@/lib/projects/agentWorkspace";
 import { deleteAgentArtifacts } from "@/lib/projects/fs.server";
 import { resolveProjectTileOrResponse } from "@/app/api/projects/resolveResponse";
 import {
-  loadClawdbotConfig,
   removeAgentEntry,
-  saveClawdbotConfig,
+  updateClawdbotConfig,
   upsertAgentEntry,
 } from "@/lib/clawdbot/config";
 import { loadStore, removeTileFromProject, saveStore, updateTileInProject } from "../../../store";
@@ -33,17 +32,10 @@ export async function DELETE(
       warnings.push(`Missing agentId for tile ${tile.id}; skipped agent cleanup.`);
     } else {
       deleteAgentArtifacts(resolvedProjectId, tile.agentId, warnings);
-      try {
-        const { config, configPath } = loadClawdbotConfig();
-        const changed = removeAgentEntry(config, tile.agentId);
-        if (changed) {
-          saveClawdbotConfig(configPath, config);
-        }
-      } catch (err) {
-        const message =
-          err instanceof Error ? err.message : "Failed to update clawdbot.json.";
-        warnings.push(`Agent config not updated: ${message}`);
-      }
+      const { warnings: configWarnings } = updateClawdbotConfig((config) =>
+        removeAgentEntry(config, tile.agentId)
+      );
+      warnings.push(...configWarnings);
     }
 
     const { store: nextStore, removed } = removeTileFromProject(
@@ -96,21 +88,14 @@ export async function PATCH(
         resolvedProjectId,
         tile.agentId
       );
-      try {
-        const { config, configPath } = loadClawdbotConfig();
-        const changed = upsertAgentEntry(config, {
+      const { warnings: configWarnings } = updateClawdbotConfig((config) =>
+        upsertAgentEntry(config, {
           agentId: tile.agentId,
           agentName: name,
           workspaceDir: nextWorkspaceDir,
-        });
-        if (changed) {
-          saveClawdbotConfig(configPath, config);
-        }
-      } catch (err) {
-        const message =
-          err instanceof Error ? err.message : "Failed to update clawdbot.json.";
-        warnings.push(`Agent config not updated: ${message}`);
-      }
+        })
+      );
+      warnings.push(...configWarnings);
     }
 
     const patch = {

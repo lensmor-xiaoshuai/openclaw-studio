@@ -15,8 +15,7 @@ import { resolveAgentWorkspaceDir } from "@/lib/projects/agentWorkspace";
 import { resolveStateDir } from "@/lib/clawdbot/paths";
 import { resolveProjectOrResponse } from "@/app/api/projects/resolveResponse";
 import {
-  loadClawdbotConfig,
-  saveClawdbotConfig,
+  updateClawdbotConfig,
   upsertAgentEntry,
 } from "@/lib/clawdbot/config";
 import { generateAgentId } from "@/lib/ids/agentId";
@@ -106,21 +105,14 @@ export async function POST(
 
     const { warnings: workspaceWarnings } = provisionWorkspaceFiles(workspaceDir);
     const warnings = [...workspaceWarnings, ...copyAuthProfiles(agentId)];
-    try {
-      const { config, configPath } = loadClawdbotConfig();
-      const changed = upsertAgentEntry(config, {
+    const { warnings: configWarnings } = updateClawdbotConfig((config) =>
+      upsertAgentEntry(config, {
         agentId,
         agentName: name,
         workspaceDir,
-      });
-      if (changed) {
-        saveClawdbotConfig(configPath, config);
-      }
-    } catch (err) {
-      const message =
-        err instanceof Error ? err.message : "Failed to update clawdbot.json.";
-      warnings.push(`Agent config not updated: ${message}`);
-    }
+      })
+    );
+    warnings.push(...configWarnings);
     if (warnings.length > 0) {
       logger.warn(`Tile created with warnings: ${warnings.join(" ")}`);
     }

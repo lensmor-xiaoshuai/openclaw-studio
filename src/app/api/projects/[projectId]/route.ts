@@ -2,9 +2,8 @@ import { NextResponse } from "next/server";
 
 import { logger } from "@/lib/logger";
 import {
-  loadClawdbotConfig,
   removeAgentEntry,
-  saveClawdbotConfig,
+  updateClawdbotConfig,
 } from "@/lib/clawdbot/config";
 import { deleteAgentArtifacts } from "@/lib/projects/fs.server";
 import { resolveProjectOrResponse } from "@/app/api/projects/resolveResponse";
@@ -26,27 +25,25 @@ export async function DELETE(
     const { projectId: resolvedProjectId, project } = resolved;
 
     const warnings: string[] = [];
-    let configInfo: { config: Record<string, unknown>; configPath: string } | null = null;
-    try {
-      configInfo = loadClawdbotConfig();
-    } catch (err) {
-      const message =
-        err instanceof Error ? err.message : "Failed to update clawdbot.json.";
-      warnings.push(`Agent config not updated: ${message}`);
-    }
+    const agentIds: string[] = [];
     for (const tile of project.tiles) {
       if (!tile.agentId?.trim()) {
         warnings.push(`Missing agentId for tile ${tile.id}; skipped agent cleanup.`);
         continue;
       }
       deleteAgentArtifacts(resolvedProjectId, tile.agentId, warnings);
-      if (configInfo) {
-        removeAgentEntry(configInfo.config, tile.agentId);
+      agentIds.push(tile.agentId);
+    }
+    const { warnings: configWarnings } = updateClawdbotConfig((config) => {
+      let changed = false;
+      for (const agentId of agentIds) {
+        if (removeAgentEntry(config, agentId)) {
+          changed = true;
+        }
       }
-    }
-    if (configInfo) {
-      saveClawdbotConfig(configInfo.configPath, configInfo.config);
-    }
+      return changed;
+    });
+    warnings.push(...configWarnings);
 
     const { store: nextStore } = removeProjectFromStore(store, resolvedProjectId);
     saveStore(nextStore);
