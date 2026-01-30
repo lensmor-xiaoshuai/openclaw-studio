@@ -99,7 +99,7 @@ Flow:
 - **Node runtime for API routes**: required for filesystem access; trade-off is Node-only server runtime.
 - **Per-agent worktrees**: isolates agent file edits and git state; trade-off is additional worktree management and disk usage.
 - **Event-driven summaries + on-demand history**: keeps the dashboard lightweight; trade-off is history not being available until requested.
-- **Archive-first deletes**: preserves local state and worktrees by default; trade-off is explicit cleanup as a separate operation.
+- **Archive-first deletes**: preserves local state and worktrees by default; trade-off is explicit cleanup as a separate operation, now handled by `GET/POST /api/projects/cleanup`.
 
 ## Mermaid diagrams
 ### C4 Level 1 (System Context)
