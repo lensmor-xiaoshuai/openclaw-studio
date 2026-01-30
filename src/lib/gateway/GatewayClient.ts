@@ -100,7 +100,7 @@ export class GatewayClient {
         role: "operator",
         scopes: ["operator.admin", "operator.approvals", "operator.pairing"],
         client: {
-          id: "moltbot-control-ui",
+          id: "openclaw-control-ui",
           version: "0.1.0",
           platform: navigator.platform ?? "web",
           mode: "ui",
