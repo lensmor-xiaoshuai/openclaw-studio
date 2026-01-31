@@ -331,7 +331,7 @@ export const AgentCanvasProvider = ({ children }: { children: ReactNode }) => {
       const store = await fetchProjectsStore();
       dispatch({ type: "loadStore", store });
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to load workspaces.";
+      const message = err instanceof Error ? err.message : "Failed to load workspace.";
       dispatch({ type: "setError", error: message });
     }
   }, []);

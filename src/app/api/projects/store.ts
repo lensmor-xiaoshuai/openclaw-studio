@@ -464,7 +464,7 @@ export const loadStore = (): ProjectsStore => {
     if (details.includes(STORE_PATH)) {
       throw new Error(details);
     }
-    throw new Error(`Failed to parse workspaces store at ${STORE_PATH}: ${details}`);
+    throw new Error(`Failed to parse workspace store at ${STORE_PATH}: ${details}`);
   }
 };
 

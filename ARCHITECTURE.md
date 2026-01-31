@@ -44,7 +44,7 @@ This keeps feature cohesion high while preserving a clear client/server boundary
 
 ## Data flow & key boundaries
 ### 1) Project + tile state
-- **Source of truth**: JSON store on disk at `~/.openclaw/openclaw-studio/projects.json` with workspace settings in `~/.openclaw/openclaw-studio/settings.json` (legacy fallback to `~/.moltbot` or `~/.clawdbot`).
+- **Source of truth**: JSON store on disk at `~/.openclaw/openclaw-studio/projects.json` with workspace settings in `~/.openclaw/openclaw-studio/settings.json` (legacy fallback to `~/.moltbot` or `~/.clawdbot`). When no workspace is saved, Studio defaults to `~/.clawdbot/workspace` (created if missing). Legacy multi-workspace data is preserved in `~/.openclaw/openclaw-studio/legacy-projects.json` when single-workspace normalization runs.
 - **Server boundary**: `src/app/api/projects/*` handles validation, persistence, and side effects.
 - **Client boundary**: `AgentCanvasProvider` loads store on startup, caches in memory, and persists via API.
 

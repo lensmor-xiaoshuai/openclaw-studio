@@ -48,7 +48,7 @@ cp .env.example .env
 
 ## Workspace setup
 
-OpenClaw Studio operates in a single workspace path. On first launch, click **Workspace Settings** and set the folder where agents should operate (a repo or any directory). All agent tiles share this workspace path.
+OpenClaw Studio operates in a single workspace path. On first launch it defaults to `~/.clawdbot/workspace` (created if missing). Use **Workspace Settings** any time to point it elsewhere. All agent tiles share this workspace path.
 
 ## Configuration
 

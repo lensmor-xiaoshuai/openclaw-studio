@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
@@ -11,15 +12,35 @@ type AgentEntry = Record<string, unknown> & {
 
 const DEFAULT_AGENT_ID = "main";
 
+const resolveDefaultWorkspaceRoot = (
+  env: NodeJS.ProcessEnv = process.env,
+  homedir: () => string = os.homedir
+) => {
+  const override =
+    env.OPENCLAW_STATE_DIR?.trim() ||
+    env.MOLTBOT_STATE_DIR?.trim() ||
+    env.CLAWDBOT_STATE_DIR?.trim();
+  if (override) {
+    return resolveUserPath(override, homedir);
+  }
+  const home = homedir();
+  const clawdbotDir = path.join(home, ".clawdbot");
+  const moltbotDir = path.join(home, ".moltbot");
+  const openclawDir = path.join(home, ".openclaw");
+  if (fs.existsSync(clawdbotDir)) return clawdbotDir;
+  if (fs.existsSync(moltbotDir)) return moltbotDir;
+  if (fs.existsSync(openclawDir)) return openclawDir;
+  return clawdbotDir;
+};
+
 const resolveDefaultWorkspaceDir = (
   env: NodeJS.ProcessEnv = process.env,
   homedir: () => string = os.homedir
 ) => {
   const profile = env.OPENCLAW_PROFILE?.trim();
-  if (profile && profile.toLowerCase() !== "default") {
-    return path.join(homedir(), ".openclaw", `workspace-${profile}`);
-  }
-  return path.join(homedir(), ".openclaw", "workspace");
+  const suffix =
+    profile && profile.toLowerCase() !== "default" ? `workspace-${profile}` : "workspace";
+  return path.join(resolveDefaultWorkspaceRoot(env, homedir), suffix);
 };
 
 const readAgentList = (config: Record<string, unknown>): AgentEntry[] => {

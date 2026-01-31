@@ -63,7 +63,7 @@ export async function GET() {
     const store = normalizeProjectsStore(loadStore());
     return NextResponse.json(store);
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to load workspaces.";
+    const message = err instanceof Error ? err.message : "Failed to load workspace.";
     logger.error(message);
     return NextResponse.json({ error: message }, { status: 500 });
   }
@@ -206,13 +206,13 @@ export async function PUT(request: Request) {
   try {
     const body = (await request.json()) as ProjectsStore;
     if (!body || !Array.isArray(body.projects)) {
-      return NextResponse.json({ error: "Invalid workspaces payload." }, { status: 400 });
+      return NextResponse.json({ error: "Invalid workspace payload." }, { status: 400 });
     }
     const normalized = normalizeProjectsStore(body);
     saveStore(normalized);
     return NextResponse.json(normalized);
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to save workspaces.";
+    const message = err instanceof Error ? err.message : "Failed to save workspace.";
     logger.error(message);
     return NextResponse.json({ error: message }, { status: 500 });
   }

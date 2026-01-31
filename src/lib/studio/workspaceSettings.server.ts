@@ -65,11 +65,17 @@ export const resolveWorkspaceSelection = (): {
   const warnings: string[] = [];
   let workspacePath: string | null = null;
   let workspaceName: string | null = null;
+  let source: "settings" | "config" | "fallback" = "fallback";
+  const fallbackDefaultPath = resolveDefaultWorkspacePath(
+    {},
+    resolveDefaultAgentId({})
+  );
 
   try {
     const settings = loadWorkspaceSettings();
     if (settings.workspacePath?.trim()) {
       workspacePath = settings.workspacePath.trim();
+      source = "settings";
     }
     if (settings.workspaceName?.trim()) {
       workspaceName = settings.workspaceName.trim();
@@ -87,12 +93,18 @@ export const resolveWorkspaceSelection = (): {
       const resolved = resolveDefaultWorkspacePath(config, defaultAgentId);
       if (resolved?.trim()) {
         workspacePath = resolved.trim();
+        source = "config";
       }
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Failed to load OpenClaw config.";
       warnings.push(message);
     }
+  }
+
+  if (!workspacePath && fallbackDefaultPath) {
+    workspacePath = fallbackDefaultPath;
+    source = "fallback";
   }
 
   if (!workspaceName && workspacePath) {
@@ -103,9 +115,13 @@ export const resolveWorkspaceSelection = (): {
   if (workspacePath) {
     try {
       if (!fs.existsSync(workspacePath)) {
-        warnings.push(`Workspace path does not exist: ${workspacePath}`);
-        workspacePath = null;
-        workspaceName = null;
+        if (workspacePath === fallbackDefaultPath && source !== "settings") {
+          fs.mkdirSync(workspacePath, { recursive: true });
+        } else {
+          warnings.push(`Workspace path does not exist: ${workspacePath}`);
+          workspacePath = null;
+          workspaceName = null;
+        }
       } else if (!fs.statSync(workspacePath).isDirectory()) {
         warnings.push(`Workspace path is not a directory: ${workspacePath}`);
         workspacePath = null;
