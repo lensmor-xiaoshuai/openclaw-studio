@@ -21,11 +21,15 @@ const applyTheme = (mode: ThemeMode) => {
 };
 
 export const ThemeToggle = () => {
-  const [theme, setTheme] = useState<ThemeMode>(() => getPreferredTheme());
+  // Keep SSR + initial hydration stable ("light") to avoid markup mismatch.
+  const [theme, setTheme] = useState<ThemeMode>("light");
 
   useEffect(() => {
-    applyTheme(theme);
-  }, [theme]);
+    const preferred = getPreferredTheme();
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setTheme(preferred);
+    applyTheme(preferred);
+  }, []);
 
   const toggleTheme = () => {
     setTheme((current) => {
