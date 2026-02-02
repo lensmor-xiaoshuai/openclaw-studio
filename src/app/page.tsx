@@ -836,7 +836,7 @@ const AgentCanvasPage = () => {
       }
       unsubscribe();
     };
-  }, [client, loadSummarySnapshot, status]);
+  }, [client, loadSummarySnapshot, refreshHeartbeatLatestUpdate, status]);
 
   useEffect(() => {
     const node = viewportRef.current;
