@@ -45,6 +45,7 @@ import { renameGatewayAgent, deleteGatewayAgent } from "@/lib/gateway/agentConfi
 import {
   parseAgentIdFromSessionKey,
   buildAgentStudioSessionKey,
+  isSameSessionKey,
 } from "@/lib/gateway/sessionKeys";
 import { buildAvatarDataUrl } from "@/lib/avatars/multiavatar";
 import { fetchStudioSettings, updateStudioSettings } from "@/lib/studio/client";
@@ -342,11 +343,7 @@ const mergeHistoryWithPending = (historyLines: string[], currentLines: string[])
 };
 
 const findAgentBySessionKey = (agents: AgentTile[], sessionKey: string): string | null => {
-  const parsed = parseAgentIdFromSessionKey(sessionKey);
-  if (parsed && agents.some((agent) => agent.agentId === parsed)) {
-    return parsed;
-  }
-  const exact = agents.find((agent) => agent.sessionKey === sessionKey);
+  const exact = agents.find((agent) => isSameSessionKey(agent.sessionKey, sessionKey));
   return exact ? exact.agentId : null;
 };
 
