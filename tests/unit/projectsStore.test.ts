@@ -1,234 +1,222 @@
-import { describe, expect, it } from "vitest";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 
-import type { Project, ProjectTile, ProjectsStore } from "@/lib/projects/types";
-import {
-  addTileToProject,
-  archiveProjectInStore,
-  archiveTileInProject,
-  appendProjectToStore,
-  normalizeProjectsStore,
-  removeProjectFromStore,
-  removeTileFromProject,
-  removeTilesFromStore,
-  restoreProjectInStore,
-  restoreTileInProject,
-  updateTileInProject,
-} from "@/app/api/projects/store";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-const makeProject = (id: string): Project => ({
+import type { Project, ProjectsStore } from "@/lib/projects/types";
+import { buildSessionKey } from "@/lib/projects/sessionKey";
+
+type WorkspaceSelection = {
+  workspacePath: string | null;
+  workspaceName: string | null;
+  warnings: string[];
+};
+
+type StoreModule = typeof import("@/app/api/projects/store");
+
+const makeTempDir = () => fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-store-test-"));
+
+const makeProject = (id: string, repoPath: string): Project => ({
   id,
   name: `Project ${id}`,
-  repoPath: `/tmp/${id}`,
+  repoPath,
   createdAt: 1,
   updatedAt: 1,
   archivedAt: null,
-  tiles: [],
+  tiles: [
+    {
+      id: `${id}-tile`,
+      name: `${id} tile`,
+      agentId: "legacy-agent",
+      role: "coding",
+      sessionKey: `agent:legacy-agent:studio:${id}-tile`,
+      workspacePath: "/legacy",
+      archivedAt: null,
+      model: null,
+      thinkingLevel: null,
+      avatarSeed: null,
+      position: { x: 0, y: 0 },
+      size: { width: 420, height: 520 },
+    },
+  ],
 });
 
-const makeTile = (id: string): ProjectTile => ({
-  id,
-  name: `Tile ${id}`,
-  agentId: "main",
-  role: "coding",
-  sessionKey: `agent:main:studio:${id}`,
-  workspacePath: `/tmp/workspace`,
-  archivedAt: null,
-  model: "openai-codex/gpt-5.2-codex",
-  thinkingLevel: null,
-  avatarSeed: `agent-${id}`,
-  position: { x: 0, y: 0 },
-  size: { width: 420, height: 520 },
+const loadStoreModule = async ({
+  storeDir,
+  workspaceSelection,
+  defaultAgentId = "main",
+  config = {},
+}: {
+  storeDir: string;
+  workspaceSelection: WorkspaceSelection;
+  defaultAgentId?: string;
+  config?: Record<string, unknown>;
+}): Promise<StoreModule> => {
+  vi.resetModules();
+  vi.doMock("@/lib/projects/worktrees.server", () => ({
+    resolveAgentCanvasDir: () => storeDir,
+  }));
+  vi.doMock("@/lib/studio/workspaceSettings.server", () => ({
+    resolveWorkspaceSelection: () => workspaceSelection,
+  }));
+  vi.doMock("@/lib/clawdbot/config", () => ({
+    loadClawdbotConfig: () => ({
+      config,
+      configPath: path.join(storeDir, "openclaw.json"),
+    }),
+  }));
+  vi.doMock("@/lib/clawdbot/resolveDefaultAgent", () => ({
+    resolveDefaultAgentId: () => defaultAgentId,
+  }));
+  return import("@/app/api/projects/store");
+};
+
+afterEach(() => {
+  vi.clearAllMocks();
+  vi.resetModules();
 });
 
 describe("projectsStore", () => {
-  it("normalizesEmptyProjects", () => {
-    const store: ProjectsStore = {
+  it("loadStore_canonicalizes_to_single_workspace", async () => {
+    const storeDir = makeTempDir();
+    const initial: ProjectsStore = {
       version: 3,
-      activeProjectId: "missing",
-      projects: [],
-    };
-    const normalized = normalizeProjectsStore(store);
-    expect(normalized.version).toBe(3);
-    expect(normalized.activeProjectId).toBeNull();
-    expect(normalized.projects).toEqual([]);
-  });
-
-  it("fallsBackToFirstProject", () => {
-    const projectA = makeProject("a");
-    const projectB = makeProject("b");
-    const store: ProjectsStore = {
-      version: 3,
-      activeProjectId: "missing",
-      projects: [projectA, projectB],
-    };
-    const normalized = normalizeProjectsStore(store);
-    expect(normalized.activeProjectId).toBe("a");
-  });
-
-  it("preservesActiveProject", () => {
-    const projectA = makeProject("a");
-    const projectB = makeProject("b");
-    const store: ProjectsStore = {
-      version: 3,
-      activeProjectId: "b",
-      projects: [projectA, projectB],
-    };
-    const normalized = normalizeProjectsStore(store);
-    expect(normalized.activeProjectId).toBe("b");
-  });
-
-  it("drops archived active project", () => {
-    const projectA = makeProject("a");
-    const projectB = { ...makeProject("b"), archivedAt: Date.now() };
-    const store: ProjectsStore = {
-      version: 3,
-      activeProjectId: "b",
-      projects: [projectA, projectB],
-    };
-    const normalized = normalizeProjectsStore(store);
-    expect(normalized.activeProjectId).toBe("a");
-  });
-
-  it("normalizesNonArrayProjects", () => {
-    const store = {
-      version: 3,
-      activeProjectId: "missing",
-      projects: "nope",
-    } as unknown as ProjectsStore;
-    const normalized = normalizeProjectsStore(store);
-    expect(normalized.projects).toEqual([]);
-    expect(normalized.activeProjectId).toBeNull();
-  });
-});
-
-describe("store mutations", () => {
-  it("adds a project and sets it active", () => {
-    const store: ProjectsStore = { version: 3, activeProjectId: null, projects: [] };
-    const project = makeProject("next");
-    const nextStore = appendProjectToStore(store, project);
-    expect(nextStore.activeProjectId).toBe(project.id);
-    expect(nextStore.projects).toEqual([project]);
-  });
-
-  it("removes a project and normalizes active selection", () => {
-    const projectA = makeProject("a");
-    const projectB = makeProject("b");
-    const store: ProjectsStore = {
-      version: 3,
-      activeProjectId: projectA.id,
-      projects: [projectA, projectB],
-    };
-    const result = removeProjectFromStore(store, projectA.id);
-    expect(result.removed).toBe(true);
-    expect(result.store.projects).toEqual([projectB]);
-    expect(result.store.activeProjectId).toBe(projectB.id);
-  });
-
-  it("adds a tile and updates updatedAt", () => {
-    const now = 123;
-    const project = makeProject("a");
-    const tile = makeTile("1");
-    const store: ProjectsStore = {
-      version: 3,
-      activeProjectId: project.id,
-      projects: [project],
-    };
-    const nextStore = addTileToProject(store, project.id, tile, now);
-    const updatedProject = nextStore.projects[0];
-    expect(updatedProject.tiles).toEqual([tile]);
-    expect(updatedProject.updatedAt).toBe(now);
-  });
-
-  it("updates a tile and updates updatedAt", () => {
-    const now = 456;
-    const project = makeProject("a");
-    const tile = makeTile("1");
-    const store: ProjectsStore = {
-      version: 3,
-      activeProjectId: project.id,
-      projects: [{ ...project, tiles: [tile] }],
-    };
-    const nextStore = updateTileInProject(
-      store,
-      project.id,
-      tile.id,
-      { name: "Updated" },
-      now
-    );
-    const updatedProject = nextStore.projects[0];
-    expect(updatedProject.tiles[0].name).toBe("Updated");
-    expect(updatedProject.updatedAt).toBe(now);
-  });
-
-  it("removes a tile and reports removal", () => {
-    const now = 789;
-    const project = makeProject("a");
-    const tile = makeTile("1");
-    const store: ProjectsStore = {
-      version: 3,
-      activeProjectId: project.id,
-      projects: [{ ...project, tiles: [tile] }],
-    };
-    const result = removeTileFromProject(store, project.id, tile.id, now);
-    const updatedProject = result.store.projects[0];
-    expect(result.removed).toBe(true);
-    expect(updatedProject.tiles).toEqual([]);
-    expect(updatedProject.updatedAt).toBe(now);
-  });
-
-  it("removes multiple tiles at once", () => {
-    const now = 999;
-    const project = makeProject("a");
-    const tileA = makeTile("1");
-    const tileB = makeTile("2");
-    const store: ProjectsStore = {
-      version: 3,
-      activeProjectId: project.id,
-      projects: [{ ...project, tiles: [tileA, tileB] }],
-    };
-    const result = removeTilesFromStore(
-      store,
-      [
-        { projectId: project.id, tileId: tileA.id },
-        { projectId: project.id, tileId: tileB.id },
+      activeProjectId: "project-b",
+      projects: [
+        makeProject("project-a", "/workspace/alpha"),
+        makeProject("project-b", "/workspace/beta"),
       ],
-      now
+      needsWorkspace: false,
+    };
+    fs.writeFileSync(
+      path.join(storeDir, "projects.json"),
+      JSON.stringify(initial, null, 2),
+      "utf8"
     );
-    expect(result.removed).toBe(true);
-    expect(result.store.projects[0].tiles).toEqual([]);
-    expect(result.store.projects[0].updatedAt).toBe(now);
+
+    const mod = await loadStoreModule({
+      storeDir,
+      workspaceSelection: {
+        workspacePath: "/workspace/alpha",
+        workspaceName: "Alpha Workspace",
+        warnings: [],
+      },
+      defaultAgentId: "main-agent",
+      config: {},
+    });
+
+    const store = mod.loadStore();
+    expect(store.projects).toHaveLength(1);
+    expect(store.activeProjectId).toBe("project-a");
+    expect(store.needsWorkspace).toBe(false);
+
+    const project = store.projects[0];
+    expect(project.name).toBe("Alpha Workspace");
+    expect(project.repoPath).toBe("/workspace/alpha");
+    expect(project.tiles[0].agentId).toBe("main-agent");
+    expect(project.tiles[0].sessionKey).toBe(
+      buildSessionKey("main-agent", project.tiles[0].id)
+    );
+    expect(project.tiles[0].workspacePath).toBe("/workspace/alpha");
+
+    const legacyPath = path.join(storeDir, "legacy-projects.json");
+    expect(fs.existsSync(legacyPath)).toBe(true);
+    const legacy = JSON.parse(fs.readFileSync(legacyPath, "utf8")) as {
+      legacyProjects: Project[];
+    };
+    expect(legacy.legacyProjects).toHaveLength(1);
+    expect(legacy.legacyProjects[0].id).toBe("project-b");
   });
 
-  it("archives and restores a project", () => {
-    const now = 555;
-    const project = makeProject("a");
-    const store: ProjectsStore = {
+  it("loadStore_sets_needsWorkspace_when_unresolved", async () => {
+    const storeDir = makeTempDir();
+    const mod = await loadStoreModule({
+      storeDir,
+      workspaceSelection: {
+        workspacePath: null,
+        workspaceName: null,
+        warnings: ["Workspace not configured"],
+      },
+      config: {},
+    });
+
+    const store = mod.loadStore();
+    expect(store).toEqual({
       version: 3,
-      activeProjectId: project.id,
-      projects: [project],
-    };
-    const archived = archiveProjectInStore(store, project.id, now);
-    expect(archived.updated).toBe(true);
-    expect(archived.store.projects[0].archivedAt).toBe(now);
-    const restored = restoreProjectInStore(archived.store, project.id, now + 1);
-    expect(restored.updated).toBe(true);
-    expect(restored.store.projects[0].archivedAt).toBeNull();
+      activeProjectId: null,
+      projects: [],
+      needsWorkspace: true,
+    });
+    expect(fs.existsSync(path.join(storeDir, "projects.json"))).toBe(true);
   });
 
-  it("archives and restores a tile", () => {
-    const now = 777;
-    const project = makeProject("a");
-    const tile = makeTile("1");
-    const store: ProjectsStore = {
+  it("loadStore_migrates_legacy_v1_payload", async () => {
+    const storeDir = makeTempDir();
+    fs.writeFileSync(
+      path.join(storeDir, "projects.json"),
+      JSON.stringify(
+        {
+          version: 1,
+          activeProjectId: "project-v1",
+          projects: [
+            {
+              ...makeProject("project-v1", "/workspace/v1"),
+              tiles: [
+                {
+                  ...makeProject("project-v1", "/workspace/v1").tiles[0],
+                  sessionKey: "agent:legacy:studio:project-v1-tile",
+                  agentId: undefined,
+                  role: undefined,
+                  workspacePath: undefined,
+                  archivedAt: undefined,
+                },
+              ],
+            },
+          ],
+        },
+        null,
+        2
+      ),
+      "utf8"
+    );
+
+    const mod = await loadStoreModule({
+      storeDir,
+      workspaceSelection: {
+        workspacePath: "/workspace/v1",
+        workspaceName: null,
+        warnings: [],
+      },
+      defaultAgentId: "main-agent",
+      config: {},
+    });
+
+    const store = mod.loadStore();
+    expect(store.version).toBe(3);
+    expect(store.projects).toHaveLength(1);
+    expect(store.projects[0].tiles[0].agentId).toBe("main-agent");
+    expect(store.projects[0].tiles[0].role).toBe("coding");
+    expect(store.projects[0].tiles[0].workspacePath).toBe("/workspace/v1");
+  });
+
+  it("normalizeProjectsStore_sets_active_to_first_non_archived", async () => {
+    const storeDir = makeTempDir();
+    const mod = await loadStoreModule({
+      storeDir,
+      workspaceSelection: { workspacePath: null, workspaceName: null, warnings: [] },
+      config: {},
+    });
+    const now = Date.now();
+    const normalized = mod.normalizeProjectsStore({
       version: 3,
-      activeProjectId: project.id,
-      projects: [{ ...project, tiles: [tile] }],
-    };
-    const archived = archiveTileInProject(store, project.id, tile.id, now);
-    expect(archived.updated).toBe(true);
-    expect(archived.store.projects[0].tiles[0].archivedAt).toBe(now);
-    const restored = restoreTileInProject(archived.store, project.id, tile.id, now + 1);
-    expect(restored.updated).toBe(true);
-    expect(restored.store.projects[0].tiles[0].archivedAt).toBeNull();
+      activeProjectId: "missing",
+      projects: [
+        { ...makeProject("archived", "/workspace/a"), archivedAt: now },
+        makeProject("active", "/workspace/b"),
+      ],
+      needsWorkspace: false,
+    });
+    expect(normalized.activeProjectId).toBe("active");
   });
 });

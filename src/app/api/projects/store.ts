@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
-import type { Project, ProjectTile, ProjectsStore } from "@/lib/projects/types";
+import type { Project, ProjectsStore } from "@/lib/projects/types";
 import { resolveAgentCanvasDir } from "@/lib/projects/worktrees.server";
 import { loadClawdbotConfig } from "@/lib/clawdbot/config";
 import { resolveDefaultAgentId } from "@/lib/clawdbot/resolveDefaultAgent";
@@ -58,209 +58,6 @@ export const normalizeProjectsStore = (store: ProjectsStore): ProjectsStore => {
     projects: normalizedProjects,
     needsWorkspace: Boolean(store.needsWorkspace),
   };
-};
-
-export const appendProjectToStore = (
-  store: ProjectsStore,
-  project: Project
-): ProjectsStore =>
-  normalizeProjectsStore({
-    version: STORE_VERSION,
-    activeProjectId: project.id,
-    projects: [...store.projects, project],
-    needsWorkspace: store.needsWorkspace,
-  });
-
-export const removeProjectFromStore = (
-  store: ProjectsStore,
-  projectId: string
-): { store: ProjectsStore; removed: boolean } => {
-  const projects = store.projects.filter((project) => project.id !== projectId);
-  const removed = projects.length !== store.projects.length;
-  return {
-    store: normalizeProjectsStore({
-      version: STORE_VERSION,
-      activeProjectId: store.activeProjectId,
-      projects,
-      needsWorkspace: store.needsWorkspace,
-    }),
-    removed,
-  };
-};
-
-export const updateProjectInStore = (
-  store: ProjectsStore,
-  projectId: string,
-  patch: Partial<Project>,
-  now: number = Date.now()
-): { store: ProjectsStore; updated: boolean } => {
-  let updated = false;
-  const nextStore = {
-    ...store,
-    version: STORE_VERSION,
-    projects: store.projects.map((project) => {
-      if (project.id !== projectId) return project;
-      updated = true;
-      return { ...project, ...patch, updatedAt: now };
-    }),
-  };
-  return { store: normalizeProjectsStore(nextStore), updated };
-};
-
-export const archiveProjectInStore = (
-  store: ProjectsStore,
-  projectId: string,
-  now: number = Date.now()
-): { store: ProjectsStore; updated: boolean } => {
-  return updateProjectInStore(store, projectId, { archivedAt: now }, now);
-};
-
-export const restoreProjectInStore = (
-  store: ProjectsStore,
-  projectId: string,
-  now: number = Date.now()
-): { store: ProjectsStore; updated: boolean } => {
-  return updateProjectInStore(store, projectId, { archivedAt: null }, now);
-};
-
-export const addTileToProject = (
-  store: ProjectsStore,
-  projectId: string,
-  tile: ProjectTile,
-  now: number = Date.now()
-): ProjectsStore => ({
-  ...store,
-  version: STORE_VERSION,
-  projects: store.projects.map((project) =>
-    project.id === projectId
-      ? { ...project, tiles: [...project.tiles, tile], updatedAt: now }
-      : project
-  ),
-});
-
-export const updateTileInProject = (
-  store: ProjectsStore,
-  projectId: string,
-  tileId: string,
-  patch: Partial<ProjectTile>,
-  now: number = Date.now()
-): ProjectsStore => ({
-  ...store,
-  version: STORE_VERSION,
-  projects: store.projects.map((project) =>
-    project.id === projectId
-      ? {
-          ...project,
-          tiles: project.tiles.map((tile) =>
-            tile.id === tileId ? { ...tile, ...patch } : tile
-          ),
-          updatedAt: now,
-        }
-      : project
-  ),
-});
-
-export const removeTileFromProject = (
-  store: ProjectsStore,
-  projectId: string,
-  tileId: string,
-  now: number = Date.now()
-): { store: ProjectsStore; removed: boolean } => {
-  let removed = false;
-  const nextStore = {
-    ...store,
-    version: STORE_VERSION,
-    projects: store.projects.map((project) => {
-      if (project.id !== projectId) return project;
-      const nextTiles = project.tiles.filter((tile) => tile.id !== tileId);
-      removed = removed || nextTiles.length !== project.tiles.length;
-      return { ...project, tiles: nextTiles, updatedAt: now };
-    }),
-  };
-  return { store: nextStore, removed };
-};
-
-export const removeTilesFromStore = (
-  store: ProjectsStore,
-  removals: Array<{ projectId: string; tileId: string }>,
-  now: number = Date.now()
-): { store: ProjectsStore; removed: boolean } => {
-  const targetsByProject = new Map<string, Set<string>>();
-  for (const entry of removals) {
-    const projectId = entry.projectId.trim();
-    const tileId = entry.tileId.trim();
-    if (!projectId || !tileId) continue;
-    const existing = targetsByProject.get(projectId);
-    if (existing) {
-      existing.add(tileId);
-    } else {
-      targetsByProject.set(projectId, new Set([tileId]));
-    }
-  }
-
-  let removed = false;
-  const nextStore = {
-    ...store,
-    version: STORE_VERSION,
-    projects: store.projects.map((project) => {
-      const targets = targetsByProject.get(project.id);
-      if (!targets) return project;
-      const nextTiles = project.tiles.filter((tile) => !targets.has(tile.id));
-      if (nextTiles.length === project.tiles.length) {
-        return project;
-      }
-      removed = true;
-      return { ...project, tiles: nextTiles, updatedAt: now };
-    }),
-  };
-
-  return { store: nextStore, removed };
-};
-
-export const archiveTileInProject = (
-  store: ProjectsStore,
-  projectId: string,
-  tileId: string,
-  now: number = Date.now()
-): { store: ProjectsStore; updated: boolean } => {
-  let updated = false;
-  const nextStore = {
-    ...store,
-    version: STORE_VERSION,
-    projects: store.projects.map((project) => {
-      if (project.id !== projectId) return project;
-      const nextTiles = project.tiles.map((tile) => {
-        if (tile.id !== tileId) return tile;
-        updated = true;
-        return { ...tile, archivedAt: now };
-      });
-      return { ...project, tiles: nextTiles, updatedAt: now };
-    }),
-  };
-  return { store: normalizeProjectsStore(nextStore), updated };
-};
-
-export const restoreTileInProject = (
-  store: ProjectsStore,
-  projectId: string,
-  tileId: string,
-  now: number = Date.now()
-): { store: ProjectsStore; updated: boolean } => {
-  let updated = false;
-  const nextStore = {
-    ...store,
-    version: STORE_VERSION,
-    projects: store.projects.map((project) => {
-      if (project.id !== projectId) return project;
-      const nextTiles = project.tiles.map((tile) => {
-        if (tile.id !== tileId) return tile;
-        updated = true;
-        return { ...tile, archivedAt: null };
-      });
-      return { ...project, tiles: nextTiles, updatedAt: now };
-    }),
-  };
-  return { store: normalizeProjectsStore(nextStore), updated };
 };
 
 type RawTile = {
@@ -364,10 +161,7 @@ const applySingleWorkspace = (store: ProjectsStore): ProjectsStore => {
     };
   } else if (resolvedWorkspacePath) {
     const now = Date.now();
-    const name =
-      workspaceName ||
-      path.basename(resolvedWorkspacePath) ||
-      "Workspace";
+    const name = workspaceName || path.basename(resolvedWorkspacePath) || "Workspace";
     nextProject = {
       id: randomUUID(),
       name,
@@ -380,9 +174,7 @@ const applySingleWorkspace = (store: ProjectsStore): ProjectsStore => {
   }
 
   const activeProjectId = nextProject?.id ?? null;
-  const legacyProjects = normalized.projects.filter(
-    (project) => project.id !== activeProjectId
-  );
+  const legacyProjects = normalized.projects.filter((project) => project.id !== activeProjectId);
   saveLegacyProjects(legacyProjects, normalized.activeProjectId);
 
   return {
@@ -399,9 +191,7 @@ const migrateV1Store = (store: { activeProjectId?: string | null; projects: RawP
     archivedAt: null,
     tiles: project.tiles.map((tile) => ({
       ...tile,
-      agentId: parseAgentIdFromSessionKey(
-        typeof tile.sessionKey === "string" ? tile.sessionKey : ""
-      ),
+      agentId: parseAgentIdFromSessionKey(typeof tile.sessionKey === "string" ? tile.sessionKey : ""),
       role: "coding" as const,
       workspacePath: "",
       archivedAt: null,
@@ -430,6 +220,7 @@ export const loadStore = (): ProjectsStore => {
     fs.writeFileSync(STORE_PATH, JSON.stringify(seed, null, 2), "utf8");
     return seed;
   }
+
   const raw = fs.readFileSync(STORE_PATH, "utf8");
   try {
     const parsed = JSON.parse(raw) as RawStore;
@@ -439,6 +230,7 @@ export const loadStore = (): ProjectsStore => {
     if (!parsed.projects.every((project) => Array.isArray(project.tiles))) {
       throw new Error(`Workspaces store is invalid at ${STORE_PATH}.`);
     }
+
     if (parsed.version === STORE_VERSION) {
       const normalized = normalizeProjectsStore(parsed as ProjectsStore);
       const single = applySingleWorkspace(normalized);
@@ -447,12 +239,14 @@ export const loadStore = (): ProjectsStore => {
       }
       return single;
     }
+
     if (parsed.version === 2) {
       const migrated = migrateV2Store(parsed);
       const single = applySingleWorkspace(migrated);
       saveStore(single);
       return single;
     }
+
     const migrated = migrateV1Store({
       activeProjectId: parsed.activeProjectId ?? null,
       projects: parsed.projects,
