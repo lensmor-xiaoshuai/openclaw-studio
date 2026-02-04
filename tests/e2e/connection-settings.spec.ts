@@ -32,6 +32,8 @@ test("connection settings persist to the studio settings API", async ({ page }) 
   });
 
   await page.goto("/");
+  await page.getByTestId("studio-menu-toggle").click();
+  await page.getByTestId("gateway-settings-toggle").click();
 
   await page.getByLabel("Gateway URL").fill("ws://gateway.example:18789");
   await page.getByLabel("Token").fill("token-123");

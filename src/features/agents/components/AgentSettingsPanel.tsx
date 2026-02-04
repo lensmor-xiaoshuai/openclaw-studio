@@ -117,7 +117,7 @@ export const AgentSettingsPanel = ({
               }}
               disabled={renameSaving}
             >
-              {renameSaving ? "Saving..." : "Save name"}
+              {renameSaving ? "Saving..." : "Update Name"}
             </button>
           </div>
         </section>

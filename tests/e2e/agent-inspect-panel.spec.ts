@@ -29,6 +29,8 @@ test.beforeEach(async ({ page }) => {
 test("connection panel reflects disconnected state", async ({ page }) => {
   await page.goto("/");
 
+  await page.getByTestId("studio-menu-toggle").click();
+  await page.getByTestId("gateway-settings-toggle").click();
   await expect(page.getByText("Disconnected").first()).toBeVisible();
   await expect(page.getByRole("button", { name: "Connect", exact: true })).toBeEnabled();
 });

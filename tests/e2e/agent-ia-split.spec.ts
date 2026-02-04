@@ -30,6 +30,7 @@ test("shows_connection_settings_and_brain_controls_in_header", async ({ page }) 
   await page.goto("/");
 
   await expect(page.getByTestId("brain-files-toggle")).toBeVisible();
+  await page.getByTestId("studio-menu-toggle").click();
   await expect(page.getByTestId("gateway-settings-toggle")).toBeVisible();
 });
 
@@ -38,5 +39,6 @@ test("mobile_header_shows_brain_and_connection_controls", async ({ page }) => {
   await page.goto("/");
 
   await expect(page.getByTestId("brain-files-toggle")).toBeVisible();
+  await page.getByTestId("studio-menu-toggle").click();
   await expect(page.getByTestId("gateway-settings-toggle")).toBeVisible();
 });

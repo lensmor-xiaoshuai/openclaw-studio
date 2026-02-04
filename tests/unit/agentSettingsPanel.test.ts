@@ -57,7 +57,7 @@ describe("AgentSettingsPanel", () => {
     fireEvent.change(screen.getByLabelText("Agent name"), {
       target: { value: "  Agent Two  " },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Save name" }));
+    fireEvent.click(screen.getByRole("button", { name: "Update Name" }));
 
     await waitFor(() => {
       expect(onRename).toHaveBeenCalledWith("Agent Two");

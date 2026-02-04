@@ -94,7 +94,7 @@ describe("AgentBrainPanel", () => {
     expect(screen.getByRole("button", { name: "AGENTS" })).toBeInTheDocument();
 
     await waitFor(() => {
-      expect(screen.getByDisplayValue("alpha agents")).toBeInTheDocument();
+      expect(screen.getByText("alpha agents")).toBeInTheDocument();
     });
   });
 
@@ -127,6 +127,8 @@ describe("AgentBrainPanel", () => {
       })
     );
 
+    await screen.findByText("alpha agents");
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
     const textarea = await screen.findByDisplayValue("alpha agents");
     fireEvent.change(textarea, { target: { value: "alpha agents updated" } });
     fireEvent.click(screen.getByTestId("agent-brain-close"));

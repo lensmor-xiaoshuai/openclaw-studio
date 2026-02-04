@@ -1,6 +1,8 @@
 "use client";
 
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import type { AgentState } from "@/features/agents/state/store";
 import {
   AGENT_FILE_META,
@@ -40,6 +42,7 @@ export const AgentBrainPanel = ({
     handleAgentFileTabChange,
     saveAgentFiles,
   } = useAgentFilesEditor(selectedAgent?.sessionKey ?? null);
+  const [previewMode, setPreviewMode] = useState(true);
 
   const handleTabChange = useCallback(
     async (nextTab: AgentFileName) => {
@@ -59,7 +62,7 @@ export const AgentBrainPanel = ({
 
   return (
     <div
-      className="agent-inspect-panel"
+      className="agent-inspect-panel flex min-h-0 flex-col overflow-hidden"
       data-testid="agent-brain-panel"
       style={{ position: "relative", left: "auto", top: "auto", width: "100%", height: "100%" }}
     >
@@ -85,8 +88,8 @@ export const AgentBrainPanel = ({
         </button>
       </div>
 
-      <div className="flex min-h-0 h-[calc(100%-72px)] flex-col p-4">
-        <section className="flex min-h-[420px] flex-1 flex-col" data-testid="agent-brain-files">
+      <div className="flex min-h-0 flex-1 flex-col p-4">
+        <section className="flex min-h-0 flex-1 flex-col" data-testid="agent-brain-files">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
               {AGENT_FILE_META[agentFileTab].hint}
@@ -121,20 +124,57 @@ export const AgentBrainPanel = ({
             })}
           </div>
 
-          <div className="mt-3 flex-1 overflow-auto rounded-md bg-muted/30 p-2">
-            <textarea
-              className="min-h-[220px] w-full resize-none rounded-md border border-border/80 bg-background/80 px-3 py-2 font-mono text-xs text-foreground outline-none"
-              value={agentFiles[agentFileTab].content}
-              placeholder={
-                agentFiles[agentFileTab].content.trim().length === 0
-                  ? AGENT_FILE_PLACEHOLDERS[agentFileTab]
-                  : undefined
-              }
-              disabled={agentFilesLoading || agentFilesSaving}
-              onChange={(event) => {
-                setAgentFileContent(event.target.value);
-              }}
-            />
+          <div className="mt-3 flex items-center justify-end gap-1">
+            <button
+              type="button"
+              className={`rounded-md border px-2.5 py-1 font-mono text-[10px] font-semibold uppercase tracking-[0.12em] transition ${
+                previewMode
+                  ? "border-border bg-background text-foreground"
+                  : "border-border/70 bg-card/60 text-muted-foreground hover:bg-muted/70"
+              }`}
+              onClick={() => setPreviewMode(true)}
+            >
+              Preview
+            </button>
+            <button
+              type="button"
+              className={`rounded-md border px-2.5 py-1 font-mono text-[10px] font-semibold uppercase tracking-[0.12em] transition ${
+                previewMode
+                  ? "border-border/70 bg-card/60 text-muted-foreground hover:bg-muted/70"
+                  : "border-border bg-background text-foreground"
+              }`}
+              onClick={() => setPreviewMode(false)}
+            >
+              Edit
+            </button>
+          </div>
+
+          <div className="mt-3 min-h-0 flex-1 rounded-md bg-muted/30 p-2">
+            {previewMode ? (
+              <div className="agent-markdown h-full overflow-y-auto rounded-md border border-border/80 bg-background/80 px-3 py-2 text-xs text-foreground">
+                {agentFiles[agentFileTab].content.trim().length === 0 ? (
+                  <p className="text-muted-foreground">{AGENT_FILE_PLACEHOLDERS[agentFileTab]}</p>
+                ) : (
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                    {agentFiles[agentFileTab].content}
+                  </ReactMarkdown>
+                )}
+              </div>
+            ) : (
+              <textarea
+                className="h-full min-h-0 w-full resize-none overflow-y-auto rounded-md border border-border/80 bg-background/80 px-3 py-2 font-mono text-xs text-foreground outline-none"
+                value={agentFiles[agentFileTab].content}
+                placeholder={
+                  agentFiles[agentFileTab].content.trim().length === 0
+                    ? AGENT_FILE_PLACEHOLDERS[agentFileTab]
+                    : undefined
+                }
+                disabled={agentFilesLoading || agentFilesSaving}
+                onChange={(event) => {
+                  setAgentFileContent(event.target.value);
+                }}
+              />
+            )}
           </div>
 
           <div className="mt-3 flex items-center justify-between gap-2 pt-2">
