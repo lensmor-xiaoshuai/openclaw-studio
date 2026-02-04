@@ -1023,7 +1023,7 @@ const AgentStudioPage = () => {
       const isResetCommand = /^\/(reset|new)(\s|$)/i.test(trimmed);
       const runId = crypto.randomUUID();
       assistantStreamByRunRef.current.delete(runId);
-      const agent = agents.find((entry) => entry.agentId === agentId);
+      const agent = stateRef.current.agents.find((entry) => entry.agentId === agentId);
       if (!agent) {
         dispatch({
           type: "appendOutput",
@@ -1103,7 +1103,7 @@ const AgentStudioPage = () => {
         });
       }
     },
-    [agents, client, dispatch]
+    [client, dispatch]
   );
 
   const handleSessionSettingChange = useCallback(
@@ -1114,7 +1114,7 @@ const AgentStudioPage = () => {
       value: string | null
     ) => {
       await applySessionSettingMutation({
-        agents,
+        agents: stateRef.current.agents,
         dispatch,
         client,
         agentId,
@@ -1123,7 +1123,7 @@ const AgentStudioPage = () => {
         value,
       });
     },
-    [agents, client, dispatch]
+    [client, dispatch]
   );
 
   const handleModelChange = useCallback(

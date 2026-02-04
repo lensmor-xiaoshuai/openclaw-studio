@@ -82,7 +82,7 @@ const createRuntimeAgentState = (
     avatarSeed: seed.avatarSeed ?? existing?.avatarSeed ?? seed.agentId,
     avatarUrl: seed.avatarUrl ?? existing?.avatarUrl ?? null,
     model: seed.model ?? existing?.model ?? null,
-    thinkingLevel: seed.thinkingLevel ?? existing?.thinkingLevel ?? "medium",
+    thinkingLevel: seed.thinkingLevel ?? existing?.thinkingLevel ?? "high",
     status: existing?.status ?? "idle",
     sessionCreated: existing?.sessionCreated ?? false,
     awaitingUserInput: existing?.awaitingUserInput ?? false,
