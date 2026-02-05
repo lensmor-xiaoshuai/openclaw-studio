@@ -10,6 +10,7 @@ import {
   getChatSummaryPatch,
   mergeHistoryWithPending,
   mergeRuntimeStream,
+  resolveAssistantCompletionTimestamp,
   resolveLifecyclePatch,
   shouldPublishAssistantStream,
 } from "@/features/agents/state/runtimeEventBridge";
@@ -126,6 +127,38 @@ describe("runtime event bridge helpers", () => {
     expect(patch?.lastActivityAt).toBe(456);
   });
 
+  it("resolves assistant completion timestamp only for final assistant messages", () => {
+    expect(
+      resolveAssistantCompletionTimestamp({
+        role: "assistant",
+        state: "delta",
+        message: { timestamp: "2024-01-01T00:00:00.000Z" },
+      })
+    ).toBeNull();
+    expect(
+      resolveAssistantCompletionTimestamp({
+        role: "user",
+        state: "final",
+        message: { timestamp: "2024-01-01T00:00:00.000Z" },
+      })
+    ).toBeNull();
+    expect(
+      resolveAssistantCompletionTimestamp({
+        role: "assistant",
+        state: "final",
+        message: { timestamp: "2024-01-01T00:00:00.000Z" },
+      })
+    ).toBe(Date.parse("2024-01-01T00:00:00.000Z"));
+    expect(
+      resolveAssistantCompletionTimestamp({
+        role: "assistant",
+        state: "final",
+        message: {},
+        now: 1234,
+      })
+    ).toBe(1234);
+  });
+
   it("builds summary patches from status and preview snapshots", () => {
     const patches = buildSummarySnapshotPatches({
       agents: [
@@ -185,6 +218,43 @@ describe("runtime event bridge helpers", () => {
     });
 
     expect(patches).toEqual([]);
+  });
+
+  it("does not update assistant sort timestamp from summary while agent is running", () => {
+    const patches = buildSummarySnapshotPatches({
+      agents: [
+        {
+          agentId: "agent-1",
+          sessionKey: "agent:agent-1:studio:session-a",
+          status: "running",
+        },
+      ],
+      statusSummary: {
+        sessions: {
+          recent: [{ key: "agent:agent-1:studio:session-a", updatedAt: 111 }],
+        },
+      },
+      previewResult: {
+        ts: 0,
+        previews: [
+          {
+            key: "agent:agent-1:studio:session-a",
+            status: "ok",
+            items: [{ role: "assistant", text: "assistant latest", timestamp: 999 }],
+          },
+        ],
+      },
+    });
+
+    expect(patches).toEqual([
+      {
+        agentId: "agent-1",
+        patch: {
+          lastActivityAt: 111,
+          latestPreview: "assistant latest",
+        },
+      },
+    ]);
   });
 
   it("extracts history lines with heartbeat filtering, thinking/tool lines, and dedupe", () => {

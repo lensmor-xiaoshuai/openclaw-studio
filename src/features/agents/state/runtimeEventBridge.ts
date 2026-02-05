@@ -48,6 +48,13 @@ type ShouldPublishAssistantStreamInput = {
   currentStreamText: string | null;
 };
 
+type AssistantCompletionTimestampInput = {
+  role: unknown;
+  state: ChatEventPayload["state"];
+  message: unknown;
+  now?: number;
+};
+
 type DedupeRunLinesResult = {
   appended: string[];
   nextSeen: Set<string>;
@@ -72,6 +79,7 @@ export type AgentEventPayload = {
 export type SummarySnapshotAgent = {
   agentId: string;
   sessionKey: string;
+  status?: AgentState["status"];
 };
 
 export type SummarySessionStatusEntry = {
@@ -179,6 +187,16 @@ const extractMessageTimestamp = (message: unknown): number | null => {
   return (
     toTimestampMs(record.timestamp) ?? toTimestampMs(record.createdAt) ?? toTimestampMs(record.at)
   );
+};
+
+export const resolveAssistantCompletionTimestamp = ({
+  role,
+  state,
+  message,
+  now = Date.now(),
+}: AssistantCompletionTimestampInput): number | null => {
+  if (role !== "assistant" || state !== "final") return null;
+  return extractMessageTimestamp(message) ?? now;
 };
 
 export const buildHistoryLines = (messages: ChatHistoryMessage[]): HistoryLinesResult => {
@@ -336,7 +354,7 @@ export const buildSummarySnapshotPatches = ({
     const preview = previewMap.get(agent.sessionKey);
     if (preview?.items?.length) {
       const latestItem = preview.items[preview.items.length - 1];
-      if (latestItem?.role === "assistant") {
+      if (latestItem?.role === "assistant" && agent.status !== "running") {
         const previewTs = toTimestampMs(latestItem.timestamp);
         if (typeof previewTs === "number") {
           patch.lastAssistantMessageAt = previewTs;
