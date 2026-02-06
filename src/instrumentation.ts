@@ -1,5 +1,5 @@
-import { registerTracing } from "@/lib/tracing";
+import { registerOTel } from "@vercel/otel";
 
 export const register = () => {
-  registerTracing();
+  registerOTel({ serviceName: "openclaw-studio" });
 };
