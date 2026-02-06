@@ -11,20 +11,18 @@ import { HeaderBar } from "@/features/agents/components/HeaderBar";
 import { ConnectionPanel } from "@/features/agents/components/ConnectionPanel";
 import { EmptyStatePanel } from "@/features/agents/components/EmptyStatePanel";
 import {
+  buildAgentInstruction,
   extractText,
   extractThinking,
   extractThinkingFromTaggedStream,
   formatThinkingMarkdown,
   isTraceMarkdown,
-  extractToolLines,
-  formatToolCallMarkdown,
-} from "@/lib/text/message-extract";
-import {
-  buildAgentInstruction,
   isHeartbeatPrompt,
   isUiMetadataPrefix,
   stripUiMetadata,
-} from "@/lib/text/message-metadata";
+  extractToolLines,
+  formatToolCallMarkdown,
+} from "@/lib/text/message-extract";
 import { useGatewayConnection } from "@/lib/gateway/useGatewayConnection";
 import type { EventFrame } from "@/lib/gateway/frames";
 import {
@@ -64,7 +62,7 @@ import {
   removeCronJobsForAgent,
   runCronJobNow,
 } from "@/lib/cron/gateway";
-import { filterCronJobsForAgent, resolveLatestCronJobForAgent } from "@/lib/cron/selectors";
+import { filterCronJobsForAgent, resolveLatestCronJobForAgent } from "@/lib/cron/types";
 import {
   listHeartbeatsForAgent,
   triggerHeartbeatNow,

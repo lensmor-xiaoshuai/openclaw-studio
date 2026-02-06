@@ -37,7 +37,7 @@ This keeps feature cohesion high while preserving a clear client/server boundary
 - **Local OpenClaw config + paths** (`src/lib/clawdbot`): state/config/.env path resolution with `OPENCLAW_*` env overrides (`src/lib/clawdbot/paths.ts`). Local config access is used for optional Discord provisioning and local path/config helpers; shared local config list helpers live in `src/lib/clawdbot/config.ts` and are reused by Discord provisioning. Gateway URL/token in Studio are sourced from studio settings.
 - **Shared agent config-list helpers** (`src/lib/agents/configList.ts`): pure `agents.list` read/write/upsert helpers reused by both gateway config patching (`src/lib/gateway/agentConfig.ts`) and local config access (`src/lib/clawdbot/config.ts`) to keep list-shape semantics aligned.
 - **Discord integration** (`src/lib/discord`, API route): channel provisioning and config binding (local gateway only).
-- **Shared utilities** (`src/lib/*`): env, ids, names, avatars, text parsing, logging, filesystem helpers.
+- **Shared utilities** (`src/lib/*`): env, ids, names, avatars, message parsing/normalization (including tool-line formatting) in `src/lib/text/message-extract.ts`, cron types + selection helpers in `src/lib/cron/types.ts`, logging, filesystem helpers.
 
 ## Directory layout (top-level)
 - `src/app`: Next.js App Router pages, layouts, global styles, and API routes.

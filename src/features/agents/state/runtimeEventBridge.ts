@@ -4,12 +4,10 @@ import {
   extractThinking,
   extractToolLines,
   formatThinkingMarkdown,
-} from "@/lib/text/message-extract";
-import {
   isHeartbeatPrompt,
   isUiMetadataPrefix,
   stripUiMetadata,
-} from "@/lib/text/message-metadata";
+} from "@/lib/text/message-extract";
 
 type LifecyclePhase = "start" | "end" | "error";
 

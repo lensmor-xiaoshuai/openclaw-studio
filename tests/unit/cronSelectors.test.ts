@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   filterCronJobsForAgent,
   resolveLatestCronJobForAgent,
-} from "@/lib/cron/selectors";
+} from "@/lib/cron/types";
 import type { CronJobSummary } from "@/lib/cron/types";
 
 const buildJob = (input: {

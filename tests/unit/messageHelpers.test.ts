@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { buildAgentInstruction } from "@/lib/text/message-metadata";
+import { buildAgentInstruction } from "@/lib/text/message-extract";
 
 describe("buildAgentInstruction", () => {
   it("returns trimmed message for normal prompts", () => {
