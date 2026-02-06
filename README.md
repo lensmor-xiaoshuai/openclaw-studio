@@ -68,6 +68,7 @@ Your gateway config lives in `openclaw.json` in your state directory. Defaults:
 
 Studio stores its own settings locally at `~/.openclaw/openclaw-studio/settings.json` (gateway URL/token + focused preferences).
 Agent create/rename/delete actions in Studio mutate gateway config through `config.patch`, so `openclaw.json` is updated on the **gateway host** (local machine for local gateways, remote host for EC2/remote gateways).
+When deleting an agent, Studio also attempts to move the agent's workspace/state on the gateway host into `~/.openclaw/trash` over SSH (so remote gateways don't accumulate orphan `workspace-*` / `agents/*` directories).
 
 Optional overrides:
 - `OPENCLAW_STATE_DIR`
@@ -117,6 +118,7 @@ Run both OpenClaw Studio and OpenClaw inside the same WSL2 distro. Use the WSL s
 - **Gateway unreachable**: Confirm the gateway is running and `NEXT_PUBLIC_GATEWAY_URL` matches
 - **Auth errors**: Check `gateway.auth.token` in `openclaw.json`
 - **Brain files fail to load**: Confirm Studio is connected, and your gateway supports `agents.files.get` / `agents.files.set` (update OpenClaw if those methods are missing).
+- **Remote delete fails**: Studio deletes agents by moving their workspace/state into `~/.openclaw/trash` on the gateway host over SSH (must be able to `ssh` non-interactively). Use `OPENCLAW_TASK_CONTROL_PLANE_SSH_TARGET` if Studio can't derive the host from the gateway URL.
 
 ## Architecture
 

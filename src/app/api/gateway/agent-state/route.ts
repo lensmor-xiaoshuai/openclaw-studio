@@ -130,7 +130,7 @@ if not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}", agent_id):
 
 base = pathlib.Path.home() / ".openclaw"
 trash_root = base / "trash" / "studio-delete-agent"
-stamp = datetime.datetime.now(datetime.UTC).strftime("%Y%m%dT%H%M%SZ")
+stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
 trash_dir = trash_root / f"{stamp}-{agent_id}-{uuid.uuid4()}"
 (trash_dir / "agents").mkdir(parents=True, exist_ok=True)
 (trash_dir / "workspaces").mkdir(parents=True, exist_ok=True)
