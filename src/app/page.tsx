@@ -1910,9 +1910,10 @@ const AgentStudioPage = () => {
         if (payload.runId) {
           chatRunSeenRef.current.add(payload.runId);
         }
-        const agentId = findAgentBySessionKey(state.agents, payload.sessionKey);
+        const agentsSnapshot = stateRef.current.agents;
+        const agentId = findAgentBySessionKey(agentsSnapshot, payload.sessionKey);
         if (!agentId) return;
-        const agent = state.agents.find((entry) => entry.agentId === agentId);
+        const agent = agentsSnapshot.find((entry) => entry.agentId === agentId);
         const role =
           payload.message && typeof payload.message === "object"
             ? (payload.message as Record<string, unknown>).role
@@ -2056,12 +2057,13 @@ const AgentStudioPage = () => {
       if (eventKind !== "runtime-agent") return;
       const payload = event.payload as AgentEventPayload | undefined;
       if (!payload?.runId) return;
+      const agentsSnapshot = stateRef.current.agents;
       const directMatch = payload.sessionKey
-        ? findAgentBySessionKey(state.agents, payload.sessionKey)
+        ? findAgentBySessionKey(agentsSnapshot, payload.sessionKey)
         : null;
-      const match = directMatch ?? findAgentByRunId(state.agents, payload.runId);
+      const match = directMatch ?? findAgentByRunId(agentsSnapshot, payload.runId);
       if (!match) return;
-      const agent = state.agents.find((entry) => entry.agentId === match);
+      const agent = agentsSnapshot.find((entry) => entry.agentId === match);
       if (!agent) return;
       markActivityThrottled(match);
       const stream = typeof payload.stream === "string" ? payload.stream : "";
@@ -2245,7 +2247,6 @@ const AgentStudioPage = () => {
     markActivityThrottled,
     queueLivePatch,
     refreshHeartbeatLatestUpdate,
-    state.agents,
     status,
     summarizeThinkingMessage,
     updateSpecialLatestUpdate,
