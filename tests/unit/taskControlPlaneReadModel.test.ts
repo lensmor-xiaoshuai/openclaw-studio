@@ -68,6 +68,22 @@ describe("buildTaskControlPlaneSnapshot", () => {
     expect(snapshot.columns.ready[0]?.decisionNeeded).toBe(true);
   });
 
+  it("buildReadModel_passesThroughDescription", () => {
+    const snapshot = buildTaskControlPlaneSnapshot({
+      openIssues: [
+        {
+          id: "bd-5",
+          title: "Has description",
+          description: "## Heading\n\nDetails here.",
+        },
+      ],
+      inProgressIssues: [],
+      blockedIssues: [],
+    });
+
+    expect(snapshot.columns.ready[0]?.description).toBe("## Heading\n\nDetails here.");
+  });
+
   it("buildReadModel_handlesMissingOptionalFields", () => {
     const snapshot = buildTaskControlPlaneSnapshot({
       openIssues: [{ id: "bd-9" }],
@@ -78,6 +94,7 @@ describe("buildTaskControlPlaneSnapshot", () => {
     expect(snapshot.columns.ready[0]).toMatchObject({
       id: "bd-9",
       title: "Issue bd-9",
+      description: null,
       priority: null,
       assignee: null,
       updatedAt: null,

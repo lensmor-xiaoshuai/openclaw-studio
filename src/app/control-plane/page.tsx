@@ -65,7 +65,9 @@ export default function ControlPlanePage() {
             <p className="mt-1 text-sm text-muted-foreground">{error}</p>
           </div>
         ) : null}
-        {!loading && !error && snapshot ? <TaskBoard snapshot={snapshot} /> : null}
+        {!loading && !error && snapshot ? (
+          <TaskBoard snapshot={snapshot} onRequestRefresh={loadSnapshot} />
+        ) : null}
       </section>
     </main>
   );

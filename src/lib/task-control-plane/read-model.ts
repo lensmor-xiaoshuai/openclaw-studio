@@ -3,6 +3,7 @@ export type TaskControlPlaneColumn = "ready" | "in_progress" | "blocked";
 export type TaskControlPlaneCard = {
   id: string;
   title: string;
+  description: string | null;
   column: TaskControlPlaneColumn;
   status: string;
   priority: number | null;
@@ -78,6 +79,7 @@ const buildCard = (
   return {
     id,
     title,
+    description: parseString(issue.description),
     column,
     status,
     priority: parseNumber(issue.priority),
