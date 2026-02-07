@@ -364,7 +364,7 @@ export function TaskBoard({ snapshot, onRequestRefresh }: TaskBoardProps) {
         ) : null}
       </div>
 
-      <div className="grid h-full min-h-0 grid-cols-1 gap-3 lg:grid-cols-3">
+      <div className="grid h-full min-h-0 grid-cols-1 gap-3 lg:grid-cols-4">
         <Column
           title="Ready"
           cards={snapshot.columns.ready}
@@ -395,6 +395,19 @@ export function TaskBoard({ snapshot, onRequestRefresh }: TaskBoardProps) {
           title="Blocked"
           cards={snapshot.columns.blocked}
           dataTestId="task-control-column-blocked"
+          showDescriptions={showDescriptions}
+          onOpenDetails={setDetailsCard}
+          priorityMenuCardId={priorityMenuCardId}
+          prioritySavingCardId={prioritySavingCardId}
+          priorityErrorCardId={priorityErrorCardId}
+          priorityErrorMessage={priorityErrorMessage}
+          onTogglePriorityMenu={onTogglePriorityMenu}
+          onSelectPriority={onSelectPriority}
+        />
+        <Column
+          title="Done"
+          cards={snapshot.columns.done}
+          dataTestId="task-control-column-done"
           showDescriptions={showDescriptions}
           onOpenDetails={setDetailsCard}
           priorityMenuCardId={priorityMenuCardId}

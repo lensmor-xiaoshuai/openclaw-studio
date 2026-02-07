@@ -26,6 +26,7 @@ const snapshot: TaskControlPlaneSnapshot = {
     ],
     inProgress: [],
     blocked: [],
+    done: [],
   },
   warnings: [],
 };
@@ -82,12 +83,13 @@ describe("TaskBoard", () => {
     vi.unstubAllGlobals();
   });
 
-  it("renders three columns and decision badge", () => {
+  it("renders columns and decision badge", () => {
     render(createElement(TaskBoard, { snapshot }));
 
     expect(screen.getByTestId("task-control-column-ready")).toBeInTheDocument();
     expect(screen.getByTestId("task-control-column-in-progress")).toBeInTheDocument();
     expect(screen.getByTestId("task-control-column-blocked")).toBeInTheDocument();
+    expect(screen.getByTestId("task-control-column-done")).toBeInTheDocument();
     expect(screen.getByText("Decision Needed")).toBeInTheDocument();
   });
 

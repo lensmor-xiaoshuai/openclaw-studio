@@ -13,17 +13,20 @@ async function loadTaskControlPlaneRawData(): Promise<{
   openIssues: unknown;
   inProgressIssues: unknown;
   blockedIssues: unknown;
+  doneIssues: unknown;
 }> {
   const runner = createTaskControlPlaneBrRunner();
   const scope = runner.runBrJson(["where"]);
   const openIssues = runner.runBrJson(["list", "--status", "open", "--limit", "0"]);
   const inProgressIssues = runner.runBrJson(["list", "--status", "in_progress", "--limit", "0"]);
   const blockedIssues = runner.runBrJson(["blocked", "--limit", "0"]);
+  const doneIssues = runner.runBrJson(["list", "--status", "closed", "--limit", "0"]);
   return {
     scopePath: runner.parseScopePath(scope),
     openIssues,
     inProgressIssues,
     blockedIssues,
+    doneIssues,
   };
 }
 

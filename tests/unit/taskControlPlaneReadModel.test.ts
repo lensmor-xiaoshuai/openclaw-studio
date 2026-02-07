@@ -8,12 +8,14 @@ describe("buildTaskControlPlaneSnapshot", () => {
       openIssues: [],
       inProgressIssues: [],
       blockedIssues: [],
+      doneIssues: [],
       scopePath: "/tmp/.beads",
     });
 
     expect(snapshot.columns.ready).toEqual([]);
     expect(snapshot.columns.inProgress).toEqual([]);
     expect(snapshot.columns.blocked).toEqual([]);
+    expect(snapshot.columns.done).toEqual([]);
     expect(snapshot.scopePath).toBe("/tmp/.beads");
     expect(snapshot.warnings).toEqual([]);
   });
@@ -43,11 +45,20 @@ describe("buildTaskControlPlaneSnapshot", () => {
           priority: 1,
         },
       ],
+      doneIssues: [
+        {
+          id: "bd-0",
+          title: "Done item",
+          status: "closed",
+          priority: 4,
+        },
+      ],
     });
 
     expect(snapshot.columns.ready.map((card) => card.id)).toEqual(["bd-1"]);
     expect(snapshot.columns.inProgress.map((card) => card.id)).toEqual(["bd-3"]);
     expect(snapshot.columns.blocked.map((card) => card.id)).toEqual(["bd-2"]);
+    expect(snapshot.columns.done.map((card) => card.id)).toEqual(["bd-0"]);
     expect(snapshot.columns.blocked[0]?.blockedBy).toEqual(["bd-100"]);
   });
 
@@ -63,6 +74,7 @@ describe("buildTaskControlPlaneSnapshot", () => {
       ],
       inProgressIssues: [],
       blockedIssues: [],
+      doneIssues: [],
     });
 
     expect(snapshot.columns.ready[0]?.decisionNeeded).toBe(true);
@@ -79,6 +91,7 @@ describe("buildTaskControlPlaneSnapshot", () => {
       ],
       inProgressIssues: [],
       blockedIssues: [],
+      doneIssues: [],
     });
 
     expect(snapshot.columns.ready[0]?.description).toBe("## Heading\n\nDetails here.");
@@ -89,6 +102,7 @@ describe("buildTaskControlPlaneSnapshot", () => {
       openIssues: [{ id: "bd-9" }],
       inProgressIssues: [],
       blockedIssues: [],
+      doneIssues: [],
     });
 
     expect(snapshot.columns.ready[0]).toMatchObject({

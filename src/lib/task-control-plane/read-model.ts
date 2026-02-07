@@ -1,4 +1,4 @@
-export type TaskControlPlaneColumn = "ready" | "in_progress" | "blocked";
+export type TaskControlPlaneColumn = "ready" | "in_progress" | "blocked" | "done";
 
 export type TaskControlPlaneCard = {
   id: string;
@@ -21,6 +21,7 @@ export type TaskControlPlaneSnapshot = {
     ready: TaskControlPlaneCard[];
     inProgress: TaskControlPlaneCard[];
     blocked: TaskControlPlaneCard[];
+    done: TaskControlPlaneCard[];
   };
   warnings: string[];
 };
@@ -72,7 +73,9 @@ const buildCard = (
   }
   const title = parseString(issue.title) ?? `Issue ${id}`;
   const labels = parseStringList(issue.labels);
-  const status = parseString(issue.status) ?? (column === "in_progress" ? "in_progress" : "open");
+  const fallbackStatus =
+    column === "in_progress" ? "in_progress" : column === "done" ? "closed" : "open";
+  const status = parseString(issue.status) ?? fallbackStatus;
   const blockedBy = parseStringList(issue.blocked_by ?? issue.blockedBy);
   const decisionNeeded = labels.some((label) => label.toLowerCase() === "decision-needed");
 
@@ -115,9 +118,15 @@ export function buildTaskControlPlaneSnapshot(input: {
   openIssues: unknown;
   inProgressIssues: unknown;
   blockedIssues: unknown;
+  doneIssues: unknown;
   scopePath?: string | null;
 }): TaskControlPlaneSnapshot {
   const warnings: string[] = [];
+  const doneCards = toIssueArray(input.doneIssues, "doneIssues", warnings)
+    .map((issue) => buildCard(issue, "done", warnings))
+    .filter((card): card is TaskControlPlaneCard => Boolean(card));
+  const doneMap = toCardMap(doneCards);
+
   const blockedCards = toIssueArray(input.blockedIssues, "blockedIssues", warnings)
     .map((issue) => buildCard(issue, "blocked", warnings))
     .filter((card): card is TaskControlPlaneCard => Boolean(card));
@@ -126,13 +135,15 @@ export function buildTaskControlPlaneSnapshot(input: {
   const inProgressCards = toIssueArray(input.inProgressIssues, "inProgressIssues", warnings)
     .map((issue) => buildCard(issue, "in_progress", warnings))
     .filter((card): card is TaskControlPlaneCard => Boolean(card))
-    .filter((card) => !blockedMap.has(card.id));
+    .filter((card) => !blockedMap.has(card.id) && !doneMap.has(card.id));
   const inProgressMap = toCardMap(inProgressCards);
 
   const readyCards = toIssueArray(input.openIssues, "openIssues", warnings)
     .map((issue) => buildCard(issue, "ready", warnings))
     .filter((card): card is TaskControlPlaneCard => Boolean(card))
-    .filter((card) => !blockedMap.has(card.id) && !inProgressMap.has(card.id));
+    .filter(
+      (card) => !blockedMap.has(card.id) && !inProgressMap.has(card.id) && !doneMap.has(card.id)
+    );
 
   return {
     generatedAt: new Date().toISOString(),
@@ -141,6 +152,7 @@ export function buildTaskControlPlaneSnapshot(input: {
       ready: readyCards.sort(compareCards),
       inProgress: [...inProgressMap.values()].sort(compareCards),
       blocked: [...blockedMap.values()].sort(compareCards),
+      done: [...doneMap.values()].sort(compareCards),
     },
     warnings,
   };

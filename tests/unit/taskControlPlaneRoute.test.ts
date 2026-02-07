@@ -67,12 +67,18 @@ describe("task control plane route", () => {
         stdout: JSON.stringify([{ id: "bd-3" }]),
         stderr: "",
         error: undefined,
+      } as never)
+      .mockReturnValueOnce({
+        status: 0,
+        stdout: JSON.stringify([{ id: "bd-4" }]),
+        stderr: "",
+        error: undefined,
       } as never);
 
     mockedBuildSnapshot.mockReturnValue({
       generatedAt: "2026-02-05T00:00:00.000Z",
       scopePath: "/tmp/.beads",
-      columns: { ready: [], inProgress: [], blocked: [] },
+      columns: { ready: [], inProgress: [], blocked: [], done: [] },
       warnings: [],
     });
 
@@ -81,7 +87,7 @@ describe("task control plane route", () => {
 
     expect(response.status).toBe(200);
     expect(body.snapshot).toBeDefined();
-    expect(mockedSpawnSync).toHaveBeenCalledTimes(4);
+    expect(mockedSpawnSync).toHaveBeenCalledTimes(5);
     expect(mockedSpawnSync).toHaveBeenNthCalledWith(
       1,
       "br",
@@ -106,11 +112,18 @@ describe("task control plane route", () => {
       ["blocked", "--limit", "0", "--json"],
       expect.objectContaining({ encoding: "utf8" })
     );
+    expect(mockedSpawnSync).toHaveBeenNthCalledWith(
+      5,
+      "br",
+      ["list", "--status", "closed", "--limit", "0", "--json"],
+      expect.objectContaining({ encoding: "utf8" })
+    );
     expect(mockedBuildSnapshot).toHaveBeenCalledWith({
       scopePath: "/tmp/.beads",
       openIssues: [{ id: "bd-1" }],
       inProgressIssues: [{ id: "bd-2" }],
       blockedIssues: [{ id: "bd-3" }],
+      doneIssues: [{ id: "bd-4" }],
     });
   });
 
@@ -145,18 +158,24 @@ describe("task control plane route", () => {
         stdout: JSON.stringify([]),
         stderr: "",
         error: undefined,
+      } as never)
+      .mockReturnValueOnce({
+        status: 0,
+        stdout: JSON.stringify([]),
+        stderr: "",
+        error: undefined,
       } as never);
 
     mockedBuildSnapshot.mockReturnValue({
       generatedAt: "2026-02-05T00:00:00.000Z",
       scopePath: beadsDir,
-      columns: { ready: [], inProgress: [], blocked: [] },
+      columns: { ready: [], inProgress: [], blocked: [], done: [] },
       warnings: [],
     });
 
     await GET();
 
-    expect(mockedSpawnSync).toHaveBeenCalledTimes(4);
+    expect(mockedSpawnSync).toHaveBeenCalledTimes(5);
     for (const call of mockedSpawnSync.mock.calls) {
       const options = call[2] as { cwd?: string };
       expect(options.cwd).toBe(tempRoot);
@@ -209,18 +228,24 @@ describe("task control plane route", () => {
         stdout: JSON.stringify([{ id: "bd-3" }]),
         stderr: "",
         error: undefined,
+      } as never)
+      .mockReturnValueOnce({
+        status: 0,
+        stdout: JSON.stringify([{ id: "bd-4" }]),
+        stderr: "",
+        error: undefined,
       } as never);
 
     mockedBuildSnapshot.mockReturnValue({
       generatedAt: "2026-02-05T00:00:00.000Z",
       scopePath: "/home/ubuntu/repo/.beads",
-      columns: { ready: [], inProgress: [], blocked: [] },
+      columns: { ready: [], inProgress: [], blocked: [], done: [] },
       warnings: [],
     });
 
     const response = await GET();
     expect(response.status).toBe(200);
-    expect(mockedSpawnSync).toHaveBeenCalledTimes(4);
+    expect(mockedSpawnSync).toHaveBeenCalledTimes(5);
     for (const call of mockedSpawnSync.mock.calls) {
       expect(call[0]).toBe("ssh");
     }
