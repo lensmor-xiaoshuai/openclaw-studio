@@ -46,7 +46,6 @@ const buildErrorPrefix = (field: SessionSettingField) =>
   field === "model" ? "Model update failed" : "Thinking update failed";
 
 export const applySessionSettingMutation = async ({
-  agents,
   dispatch,
   client,
   agentId,
