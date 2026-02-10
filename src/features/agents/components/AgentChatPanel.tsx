@@ -12,7 +12,7 @@ import {
 import type { AgentState as AgentRecord } from "@/features/agents/state/store";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { ChevronRight, Clock, Cog, Shuffle } from "lucide-react";
+import { ChevronRight, Clock, Cog, Copy, Shuffle } from "lucide-react";
 import type { GatewayModelChoice } from "@/lib/gateway/models";
 import { isToolMarkdown, isTraceMarkdown } from "@/lib/text/message-extract";
 import { isNearBottom } from "@/lib/dom";
@@ -38,6 +38,65 @@ const formatDurationLabel = (durationMs: number): string => {
   if (!Number.isFinite(seconds) || seconds <= 0) return "0.0s";
   if (seconds < 10) return `${seconds.toFixed(1)}s`;
   return `${Math.round(seconds)}s`;
+};
+
+const ASSISTANT_RAIL_COL_CLASS = "w-[148px]";
+const ASSISTANT_MAX_WIDTH_DEFAULT_CLASS = "max-w-[64ch]";
+const ASSISTANT_MAX_WIDTH_EXPANDED_CLASS = "max-w-[88ch]";
+
+const looksLikePath = (value: string): boolean => {
+  if (!value) return false;
+  if (/(^|[\s(])(?:[A-Za-z]:\\|~\/|\/)/.test(value)) return true;
+  if (/(^|[\s(])(src|app|packages|components)\//.test(value)) return true;
+  if (/(^|[\s(])[\w.-]+\.(ts|tsx|js|jsx|json|md|py|go|rs|java|kt|rb|sh|yaml|yml)\b/.test(value)) {
+    return true;
+  }
+  return false;
+};
+
+const isStructuredMarkdown = (text: string): boolean => {
+  if (!text) return false;
+  if (/```/.test(text)) return true;
+  if (/^\s*#{1,6}\s+/m.test(text)) return true;
+  if (/^\s*[-*+]\s+/m.test(text)) return true;
+  if (/^\s*\d+\.\s+/m.test(text)) return true;
+  if (/^\s*\|.+\|\s*$/m.test(text)) return true;
+  if (looksLikePath(text) && text.split("\n").filter(Boolean).length >= 3) return true;
+  return false;
+};
+
+const resolveAssistantMaxWidthClass = (text: string | null | undefined): string => {
+  const value = (text ?? "").trim();
+  if (!value) return ASSISTANT_MAX_WIDTH_DEFAULT_CLASS;
+  if (isStructuredMarkdown(value)) return ASSISTANT_MAX_WIDTH_EXPANDED_CLASS;
+  const nonEmptyLines = value.split("\n").filter((line) => line.trim().length > 0);
+  const shortLineCount = nonEmptyLines.filter((line) => line.trim().length <= 44).length;
+  if (nonEmptyLines.length >= 10 && shortLineCount / Math.max(1, nonEmptyLines.length) >= 0.65) {
+    return ASSISTANT_MAX_WIDTH_EXPANDED_CLASS;
+  }
+  return ASSISTANT_MAX_WIDTH_DEFAULT_CLASS;
+};
+
+const splitArtifactContent = (
+  rawText: string
+): { intro: string | null; artifact: string | null; artifactOnly: boolean } => {
+  const text = rawText.trim();
+  if (!text) return { intro: null, artifact: null, artifactOnly: false };
+  if (!text.includes("\n\n")) {
+    return isStructuredMarkdown(text)
+      ? { intro: null, artifact: text, artifactOnly: true }
+      : { intro: null, artifact: null, artifactOnly: false };
+  }
+  const [maybeIntro, ...restParts] = text.split(/\n\n+/);
+  const rest = restParts.join("\n\n").trim();
+  const intro = (maybeIntro ?? "").trim();
+  const introWordCount = intro ? intro.split(/\s+/).filter(Boolean).length : 0;
+  if (rest && intro && introWordCount <= 60 && isStructuredMarkdown(rest)) {
+    return { intro, artifact: rest, artifactOnly: false };
+  }
+  return isStructuredMarkdown(text)
+    ? { intro: null, artifact: text, artifactOnly: true }
+    : { intro: null, artifact: null, artifactOnly: false };
 };
 
 type AgentChatPanelProps = {
@@ -118,7 +177,7 @@ const UserMessageCard = memo(function UserMessageCard({
           You
         </div>
         {typeof timestampMs === "number" ? (
-          <time className="shrink-0 font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/90">
+          <time className="shrink-0 rounded-full border border-border/60 bg-card/60 px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/90">
             {formatChatTimestamp(timestampMs)}
           </time>
         ) : null}
@@ -151,59 +210,104 @@ const AssistantMessageCard = memo(function AssistantMessageCard({
   contentText?: string | null;
   streaming?: boolean;
 }) {
+  const resolvedTimestamp = typeof timestampMs === "number" ? timestampMs : null;
+  const widthClass = resolveAssistantMaxWidthClass(contentText);
+  const { intro, artifact, artifactOnly } =
+    streaming || !contentText ? { intro: null, artifact: null, artifactOnly: false } : splitArtifactContent(contentText);
+
   return (
-    <div className="w-full max-w-[78ch] self-start overflow-hidden rounded-md border border-border/70 bg-muted/25">
-      <div className="flex items-center justify-between gap-3 bg-muted/45 px-3 py-1.5">
-        <div className="flex min-w-0 items-center gap-2">
+    <div className="grid w-full grid-cols-[148px_minmax(0,1fr)] items-stretch gap-3 self-start">
+      <div className={`relative flex ${ASSISTANT_RAIL_COL_CLASS} flex-col`}>
+        <div className="flex items-center gap-2">
           <AgentAvatar seed={avatarSeed} name={name} avatarUrl={avatarUrl} size={22} />
           <div className="min-w-0 truncate font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground/90">
             {name}
           </div>
         </div>
-        {typeof timestampMs === "number" ? (
-          <time className="shrink-0 font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/90">
-            {formatChatTimestamp(timestampMs)}
-          </time>
-        ) : null}
+        <div aria-hidden className="ml-[11px] mt-2 flex-1 bg-border/40" style={{ width: 1 }} />
       </div>
 
-      <div className="flex flex-col gap-2 px-3 py-2">
-        {streaming ? (
-          <div
-            className="flex items-center gap-2 rounded-md border border-border/60 bg-muted/20 px-2 py-1.5 text-[11px] text-muted-foreground/90"
-            role="status"
-            aria-live="polite"
-            data-testid="agent-typing-indicator"
-          >
-            <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.12em]">
-              {showTypingIndicator ? "Typing" : "Streaming"}
-            </span>
-            <span className="typing-dots" aria-hidden="true">
-              <span />
-              <span />
-              <span />
-            </span>
-          </div>
-        ) : null}
+      <div className={`w-full ${widthClass} justify-self-start overflow-hidden rounded-md border border-border/70 bg-muted/25`}>
+        <div className="flex items-center justify-end gap-3 bg-muted/45 px-3 py-1.5">
+          {resolvedTimestamp !== null ? (
+            <time className="shrink-0 rounded-full border border-border/60 bg-card/60 px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/90">
+              {formatChatTimestamp(resolvedTimestamp)}
+            </time>
+          ) : null}
+        </div>
 
-        {thinkingText ? (
-          <ThinkingDetailsRow
-            avatarSeed={avatarSeed}
-            avatarUrl={avatarUrl}
-            name={name}
-            thinkingText={thinkingText}
-            durationMs={thinkingDurationMs}
-            showTyping={streaming}
-          />
-        ) : null}
+        <div className="flex flex-col gap-3 px-3 py-2">
+          {streaming ? (
+            <div
+              className="flex items-center gap-2 rounded-md border border-border/60 bg-muted/20 px-2 py-1.5 text-[11px] text-muted-foreground/90"
+              role="status"
+              aria-live="polite"
+              data-testid="agent-typing-indicator"
+            >
+              <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.12em]">
+                {showTypingIndicator ? "Typing" : "Streaming"}
+              </span>
+              <span className="typing-dots" aria-hidden="true">
+                <span />
+                <span />
+                <span />
+              </span>
+            </div>
+          ) : null}
 
-        {contentText ? (
-          <div
-            className={streaming ? "whitespace-pre-wrap break-words text-foreground" : "agent-markdown text-foreground"}
-          >
-            {streaming ? contentText : <ReactMarkdown remarkPlugins={[remarkGfm]}>{contentText}</ReactMarkdown>}
-          </div>
-        ) : null}
+          {thinkingText ? (
+            <ThinkingDetailsRow
+              avatarSeed={avatarSeed}
+              avatarUrl={avatarUrl}
+              name={name}
+              thinkingText={thinkingText}
+              durationMs={thinkingDurationMs}
+              showTyping={streaming}
+            />
+          ) : null}
+
+          {contentText ? (
+            streaming ? (
+              <div className="whitespace-pre-wrap break-words text-foreground">{contentText}</div>
+            ) : artifact ? (
+              <>
+                {!artifactOnly && intro ? (
+                  <div className="agent-markdown text-foreground">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{intro}</ReactMarkdown>
+                  </div>
+                ) : null}
+                <div className="rounded-md border border-border/60 bg-card/45 px-3 py-2">
+                  <div className="flex items-center justify-between gap-3 pb-2">
+                    <div className="min-w-0 truncate font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/90">
+                      Output
+                    </div>
+                    <button
+                      type="button"
+                      className="rounded-md border border-border/60 bg-card/60 p-1.5 text-muted-foreground transition hover:bg-muted/50"
+                      aria-label="Extract output"
+                      title="Copy output"
+                      onClick={() => {
+                        if (!navigator.clipboard?.writeText) return;
+                        void navigator.clipboard.writeText(artifact).catch((err) => {
+                          console.warn("Failed to copy output to clipboard.", err);
+                        });
+                      }}
+                    >
+                      <Copy className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                  <div className="agent-markdown text-foreground">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{artifact}</ReactMarkdown>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div className="agent-markdown text-foreground">
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>{contentText}</ReactMarkdown>
+              </div>
+            )
+          ) : null}
+        </div>
       </div>
     </div>
   );
@@ -290,19 +394,24 @@ const AgentChatFinalItems = memo(function AgentChatFinalItems({
         if (block.kind === "tool") {
           const { summaryText, body } = summarizeToolLabel(block.text);
           return (
-            <details
+            <div
               key={`chat-${agentId}-tool-${index}`}
-              className="w-full max-w-[78ch] self-start rounded-md border border-border/70 bg-muted/20 px-2 py-1 text-[11px] text-muted-foreground"
+              className="grid w-full grid-cols-[148px_minmax(0,1fr)] items-start gap-3 self-start"
             >
-              <summary className="cursor-pointer select-none font-mono text-[10px] font-semibold uppercase tracking-[0.11em]">
-                {summaryText}
-              </summary>
-              {body ? (
-                <div className="agent-markdown mt-1 text-foreground">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{body}</ReactMarkdown>
-                </div>
-              ) : null}
-            </details>
+              <div aria-hidden className={ASSISTANT_RAIL_COL_CLASS} />
+              <details
+                className={`w-full ${ASSISTANT_MAX_WIDTH_EXPANDED_CLASS} justify-self-start rounded-md border border-border/70 bg-muted/20 px-2 py-1 text-[11px] text-muted-foreground`}
+              >
+                <summary className="cursor-pointer select-none font-mono text-[10px] font-semibold uppercase tracking-[0.11em]">
+                  {summaryText}
+                </summary>
+                {body ? (
+                  <div className="agent-markdown mt-1 text-foreground">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{body}</ReactMarkdown>
+                  </div>
+                ) : null}
+              </details>
+            </div>
           );
         }
         const streaming = running && index === blocks.length - 1 && !block.text;
