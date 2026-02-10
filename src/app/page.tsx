@@ -71,6 +71,7 @@ import { sendChatMessageViaStudio } from "@/features/agents/operations/chatSendO
 import { hydrateAgentFleetFromGateway } from "@/features/agents/operations/agentFleetHydration";
 import { useConfigMutationQueue } from "@/features/agents/operations/useConfigMutationQueue";
 import { useGatewayRestartBlock } from "@/features/agents/operations/useGatewayRestartBlock";
+import { randomUUID } from "@/lib/uuid";
 
 type ChatHistoryMessage = Record<string, unknown>;
 
@@ -1478,7 +1479,7 @@ const AgentStudioPage = () => {
 
   const handleAvatarShuffle = useCallback(
     async (agentId: string) => {
-      const avatarSeed = crypto.randomUUID();
+      const avatarSeed = randomUUID();
       dispatch({
         type: "updateAgent",
         agentId,

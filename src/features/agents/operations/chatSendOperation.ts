@@ -1,6 +1,7 @@
 import { syncGatewaySessionSettings, type GatewayClient } from "@/lib/gateway/GatewayClient";
 import { buildAgentInstruction, formatMetaMarkdown } from "@/lib/text/message-extract";
 import type { AgentState } from "@/features/agents/state/store";
+import { randomUUID } from "@/lib/uuid";
 
 type SendDispatchAction =
   | { type: "updateAgent"; agentId: string; patch: Partial<AgentState> }
@@ -26,7 +27,7 @@ export async function sendChatMessageViaStudio(params: {
   const trimmed = params.message.trim();
   if (!trimmed) return;
 
-  const generateRunId = params.generateRunId ?? (() => crypto.randomUUID());
+  const generateRunId = params.generateRunId ?? (() => randomUUID());
   const now = params.now ?? (() => Date.now());
 
   const agentId = params.agentId;
