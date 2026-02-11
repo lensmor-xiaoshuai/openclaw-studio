@@ -1540,7 +1540,6 @@ const AgentStudioPage = () => {
               client,
               agentId,
               name,
-              sessionKey: agent.sessionKey,
             });
             dispatch({
               type: "updateAgent",

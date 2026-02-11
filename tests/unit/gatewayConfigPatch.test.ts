@@ -8,23 +8,26 @@ import {
   removeGatewayHeartbeatOverride,
   updateGatewayHeartbeat,
 } from "@/lib/gateway/agentConfig";
-import type { GatewayClient } from "@/lib/gateway/GatewayClient";
+import { GatewayResponseError, type GatewayClient } from "@/lib/gateway/GatewayClient";
 
-describe("gateway config patch helpers", () => {
-  it("creates a new agent in the config patch", async () => {
+describe("gateway agent helpers", () => {
+  it("creates a new agent via agents.create and derives workspace from the config path", async () => {
     const client = {
-      call: vi.fn(async (method: string) => {
+      call: vi.fn(async (method: string, params?: unknown) => {
         if (method === "config.get") {
           return {
             exists: true,
             hash: "hash-create-1",
-            config: {
-              agents: { list: [{ id: "agent-1", name: "Agent One" }] },
-            },
+            path: "/Users/test/.openclaw/openclaw.json",
+            config: { agents: { list: [{ id: "agent-1", name: "Agent One" }] } },
           };
         }
-        if (method === "config.patch") {
-          return { ok: true };
+        if (method === "agents.create") {
+          expect(params).toEqual({
+            name: "New Agent",
+            workspace: "/Users/test/.openclaw/workspace-new-agent",
+          });
+          return { ok: true, agentId: "new-agent", name: "New Agent", workspace: "ignored" };
         }
         throw new Error("unexpected method");
       }),
@@ -33,61 +36,25 @@ describe("gateway config patch helpers", () => {
     const entry = await createGatewayAgent({ client, name: "New Agent" });
     expect(entry.id).toBe("new-agent");
     expect(entry.name).toBe("New Agent");
-
-    const patchCall = (client.call as ReturnType<typeof vi.fn>).mock.calls.find(
-      ([method]) => method === "config.patch"
-    );
-    expect(patchCall).toBeTruthy();
-    const params = patchCall?.[1] as { raw?: string; baseHash?: string };
-    const raw = params?.raw ?? "";
-    const parsed = JSON.parse(raw) as { agents?: { list?: Array<{ id?: string; name?: string }> } };
-    const appended = parsed.agents?.list?.find((item) => item.id === "new-agent");
-    expect(params.baseHash).toBe("hash-create-1");
-    expect(appended).toEqual({ id: "new-agent", name: "New Agent" });
   });
 
-  it("creates unique ids when base id already exists", async () => {
+  it("slugifies workspace names from agent names", async () => {
     const client = {
-      call: vi.fn(async (method: string) => {
-        if (method === "config.get") {
-          return {
-            exists: true,
-            hash: "hash-create-2",
-            config: {
-              agents: {
-                list: [
-                  { id: "new-agent", name: "New Agent" },
-                  { id: "new-agent-2", name: "New Agent 2" },
-                ],
-              },
-            },
-          };
-        }
-        if (method === "config.patch") {
-          return { ok: true };
-        }
-        throw new Error("unexpected method");
-      }),
-    } as unknown as GatewayClient;
-
-    const entry = await createGatewayAgent({ client, name: "New Agent" });
-    expect(entry.id).toBe("new-agent-3");
-  });
-
-  it("slugifies agent ids from names", async () => {
-    const client = {
-      call: vi.fn(async (method: string) => {
+      call: vi.fn(async (method: string, params?: unknown) => {
         if (method === "config.get") {
           return {
             exists: true,
             hash: "hash-create-slug-1",
-            config: {
-              agents: { list: [] },
-            },
+            path: "/Users/test/.openclaw/openclaw.json",
+            config: { agents: { list: [] } },
           };
         }
-        if (method === "config.patch") {
-          return { ok: true };
+        if (method === "agents.create") {
+          expect(params).toEqual({
+            name: "My Project",
+            workspace: "/Users/test/.openclaw/workspace-my-project",
+          });
+          return { ok: true, agentId: "my-project", name: "My Project", workspace: "ignored" };
         }
         throw new Error("unexpected method");
       }),
@@ -96,34 +63,16 @@ describe("gateway config patch helpers", () => {
     const entry = await createGatewayAgent({ client, name: "My Project" });
     expect(entry.id).toBe("my-project");
     expect(entry.name).toBe("My Project");
-
-    const patchCall = (client.call as ReturnType<typeof vi.fn>).mock.calls.find(
-      ([method]) => method === "config.patch"
-    );
-    expect(patchCall).toBeTruthy();
-    const params = patchCall?.[1] as { raw?: string; baseHash?: string };
-    const raw = params?.raw ?? "";
-    const parsed = JSON.parse(raw) as { agents?: { list?: Array<{ id?: string; name?: string }> } };
-    const appended = parsed.agents?.list?.find((item) => item.id === "my-project");
-    expect(params.baseHash).toBe("hash-create-slug-1");
-    expect(appended).toEqual({ id: "my-project", name: "My Project" });
   });
 
-  it("returns no-op on deleting a missing agent and skips config.patch", async () => {
+  it("returns no-op on deleting a missing agent", async () => {
     const client = {
       call: vi.fn(async (method: string) => {
-        if (method === "config.get") {
-            return {
-            exists: true,
-            hash: "hash-del-1",
-            config: {
-              agents: { list: [{ id: "agent-1", name: "Agent One" }] },
-              bindings: [{ agentId: "agent-3", channel: "x" }],
-            },
-          };
-        }
-        if (method === "config.patch") {
-          throw new Error("config.patch should not be called");
+        if (method === "agents.delete") {
+          throw new GatewayResponseError({
+            code: "INVALID_REQUEST",
+            message: 'agent "agent-2" not found',
+          });
         }
         throw new Error("unexpected method");
       }),
@@ -136,7 +85,7 @@ describe("gateway config patch helpers", () => {
 
     expect(result).toEqual({ removed: false, removedBindings: 0 });
     expect(client.call).toHaveBeenCalledTimes(1);
-    expect((client.call as ReturnType<typeof vi.fn>).mock.calls[0][0]).toBe("config.get");
+    expect((client.call as ReturnType<typeof vi.fn>).mock.calls[0][0]).toBe("agents.delete");
   });
 
   it("fails fast on empty create name", async () => {
@@ -150,20 +99,18 @@ describe("gateway config patch helpers", () => {
     expect(client.call).not.toHaveBeenCalled();
   });
 
-  it("fails fast when create name produces an empty id slug", async () => {
+  it("fails when create name produces an empty id slug", async () => {
     const client = {
       call: vi.fn(async (method: string) => {
         if (method === "config.get") {
           return {
             exists: true,
             hash: "hash-create-empty-slug-1",
+            path: "/Users/test/.openclaw/openclaw.json",
             config: {
               agents: { list: [] },
             },
           };
-        }
-        if (method === "config.patch") {
-          throw new Error("config.patch should not be called");
         }
         throw new Error("unexpected method");
       }),
@@ -183,6 +130,7 @@ describe("gateway config patch helpers", () => {
           return {
             exists: true,
             hash: "hash-remove-1",
+            path: "/Users/test/.openclaw/openclaw.json",
             config: {
               agents: {
                 defaults: {
@@ -197,9 +145,6 @@ describe("gateway config patch helpers", () => {
               },
             },
           };
-        }
-        if (method === "config.patch") {
-          throw new Error("config.patch should not be called");
         }
         throw new Error("unexpected method");
       }),
@@ -223,36 +168,18 @@ describe("gateway config patch helpers", () => {
     expect(client.call).toHaveBeenCalledTimes(1);
   });
 
-  it("renames an agent in the config patch", async () => {
+  it("renames an agent via agents.update", async () => {
     const client = {
-      call: vi.fn(async (method: string) => {
-        if (method === "config.get") {
-          return {
-            exists: true,
-            hash: "hash-1",
-            config: {
-              agents: { list: [{ id: "agent-1", name: "Old Name" }] },
-            },
-          };
-        }
-        if (method === "config.patch") {
-          return { ok: true };
+      call: vi.fn(async (method: string, params?: unknown) => {
+        if (method === "agents.update") {
+          expect(params).toEqual({ agentId: "agent-1", name: "New Name" });
+          return { ok: true, agentId: "agent-1" };
         }
         throw new Error("unexpected method");
       }),
     } as unknown as GatewayClient;
 
     await renameGatewayAgent({ client, agentId: "agent-1", name: "New Name" });
-
-    const patchCall = (client.call as ReturnType<typeof vi.fn>).mock.calls.find(
-      ([method]) => method === "config.patch"
-    );
-    expect(patchCall).toBeTruthy();
-    const params = patchCall?.[1] as { raw?: string; baseHash?: string };
-    const raw = params?.raw ?? "";
-    const parsed = JSON.parse(raw) as { agents?: { list?: Array<{ name?: string }> } };
-    expect(params.baseHash).toBe("hash-1");
-    expect(parsed.agents?.list?.[0]?.name).toBe("New Name");
   });
 
   it("resolves heartbeat defaults and overrides", () => {
@@ -281,13 +208,14 @@ describe("gateway config patch helpers", () => {
     expect(result.hasOverride).toBe(true);
   });
 
-  it("updates heartbeat overrides via config.patch", async () => {
+  it("updates heartbeat overrides via config.set", async () => {
     const client = {
-      call: vi.fn(async (method: string) => {
+      call: vi.fn(async (method: string, params?: unknown) => {
         if (method === "config.get") {
           return {
             exists: true,
             hash: "hash-2",
+            path: "/Users/test/.openclaw/openclaw.json",
             config: {
               agents: {
                 defaults: {
@@ -303,7 +231,13 @@ describe("gateway config patch helpers", () => {
             },
           };
         }
-        if (method === "config.patch") {
+        if (method === "config.set") {
+          const raw = (params as { raw?: string }).raw ?? "";
+          const parsed = JSON.parse(raw) as {
+            agents?: { list?: Array<{ id?: string; heartbeat?: unknown }> };
+          };
+          const entry = parsed.agents?.list?.find((item) => item.id === "agent-1");
+          expect(entry && typeof entry === "object").toBe(true);
           return { ok: true };
         }
         throw new Error("unexpected method");
