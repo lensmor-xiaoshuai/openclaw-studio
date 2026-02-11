@@ -4,7 +4,7 @@
 OpenClaw Studio is a gateway-first, single-user Next.js App Router UI for managing OpenClaw agents. It provides:
 - A focused UI with fleet list, primary agent panel, and inspect sidebar.
 - Local persistence for gateway connection + focused-view preferences via a JSON settings file.
-- Direct integration with the OpenClaw runtime via a WebSocket gateway.
+- A same-origin WebSocket bridge (`/api/gateway/ws`) from browser to the upstream OpenClaw gateway.
 - Gateway-backed edits for agent config and agent files.
 
 Primary goals:
@@ -27,9 +27,10 @@ Non-goals:
 This keeps feature cohesion high while preserving a clear client/server boundary.
 
 ## Main modules / bounded contexts
-- **Focused agent UI** (`src/features/agents`): focused agent panel, fleet sidebar, inspect panel, and local in-memory state + actions. The fleet sidebar includes a `New Agent` action that calls gateway config patching and works for both local and remote gateways. Agents render a status-first summary and latest-update preview driven by gateway events. Per-agent runtime controls (`model`, `thinking`) live in the chat header (`AgentChatPanel`), active runs can be stopped from the chat composer via `chat.abort`, while settings sidebar actions are focused on rename, display toggles, new session, cron list/run/delete/create, and delete (`AgentSettingsPanel`). Cron creation now uses a guided modal with template-first onboarding and a review step, scoped to the currently selected settings agent. Gateway event classification (`presence`/`heartbeat` summary refresh and `chat`/`agent` runtime streams) is centralized in bridge helpers (`src/features/agents/state/runtimeEventBridge.ts`) and consumed from one gateway subscription path in `src/app/page.tsx`. Higher-level orchestration that used to live inline in `src/app/page.tsx` is now factored into testable operations under `src/features/agents/operations/` (fleet hydration in `agentFleetHydration.ts`, chat send in `chatSendOperation.ts`, cron create in `cronCreateOperation.ts`, and config mutation queue + restart blocking in `useConfigMutationQueue.ts` and `useGatewayRestartBlock.ts`). Session setting mutations (model/thinking) are centralized in `src/features/agents/state/sessionSettingsMutations.ts` so optimistic state updates and sync/error behavior stay aligned. Studio fetches a capped amount of chat history by default (currently 200 messages) and exposes a “Load more” affordance when the transcript may be truncated.
+- **Focused agent UI** (`src/features/agents`): focused agent panel, fleet sidebar, inspect panel, and local in-memory state + actions. The fleet sidebar includes a `New Agent` action that calls gateway config patching and works for both local and remote gateways. Agents render a status-first summary and latest-update preview driven by gateway events. Per-agent runtime controls (`model`, `thinking`) live in the chat header (`AgentChatPanel`), active runs can be stopped from the chat composer via `chat.abort`, while settings sidebar actions are focused on rename, display toggles, new session, cron list/run/delete/create, and delete (`AgentSettingsPanel`). Cron creation now uses a guided modal with template-first onboarding and a review step, scoped to the currently selected settings agent. Gateway event classification (`presence`/`heartbeat` summary refresh and `chat`/`agent` runtime streams) is centralized in bridge helpers (`src/features/agents/state/runtimeEventBridge.ts`) and consumed from one gateway subscription path in `src/app/page.tsx`. Higher-level orchestration that used to live inline in `src/app/page.tsx` is now factored into testable operations under `src/features/agents/operations/` (fleet hydration in `agentFleetHydration.ts`, chat send in `chatSendOperation.ts`, cron create in `cronCreateOperation.ts`, and config mutation queue + restart blocking in `useConfigMutationQueue.ts` and `useGatewayRestartBlock.ts`). Session setting mutations (model/thinking) are centralized in `src/features/agents/state/sessionSettingsMutations.ts` so optimistic state updates and sync/error behavior stay aligned. Studio fetches a capped amount of chat history by default (currently 200 messages) and exposes a “Load more” affordance when the transcript may be truncated. Disconnected startup now uses a status-first `GatewayConnectScreen` with a local command copy affordance and a collapsible remote form.
 - **Studio settings** (`src/lib/studio`, `src/app/api/studio`): local settings store for gateway URL/token and focused preferences (`src/lib/studio/settings.ts`, `src/app/api/studio/route.ts`). `src/lib/studio/coordinator.ts` now owns both the `/api/studio` transport helpers and shared client-side load/patch scheduling for gateway and focused settings.
 - **Gateway** (`src/lib/gateway`): WebSocket client for agent runtime (frames, connect, request/response). Session settings sync transport (`sessions.patch`) is centralized in `src/lib/gateway/GatewayClient.ts`. The OpenClaw control UI client is vendored in `src/lib/gateway/openclaw/GatewayBrowserClient.ts` with a sync script at `scripts/sync-openclaw-gateway-client.ts`.
+- **Studio gateway proxy server** (`server/index.js`, `server/gateway-proxy.js`, `server/studio-settings.js`): custom Next server that terminates browser WS at `/api/gateway/ws`, loads upstream gateway URL/token server-side, injects auth token when needed, and forwards frames to the upstream gateway.
 - **Gateway-backed config + agent-file edits** (`src/lib/gateway/agentConfig.ts`, `src/lib/gateway/agentFiles.ts`, `src/features/agents/components/AgentInspectPanels.tsx`): agent create/rename/heartbeat/delete via `config.get` + `config.patch`, agent file read/write via gateway WebSocket methods (`agents.files.get`, `agents.files.set`).
 - **Heartbeat helpers** (`src/lib/gateway/agentConfig.ts`): resolves per-agent heartbeat state (enabled + schedule) by combining gateway config (`config.get`) and status (`status`) for the settings panel, triggers `wake` for “run now”, and owns the heartbeat type shapes and gateway config mutation helpers.
 - **Session lifecycle actions** (`src/features/agents/state/store.tsx`, `src/app/page.tsx`): per-agent “New session” calls gateway `sessions.reset` on the current session key and resets local runtime transcript state.
@@ -44,6 +45,7 @@ This keeps feature cohesion high while preserving a clear client/server boundary
 - `src/lib`: domain utilities, adapters, API clients, and shared logic.
 - `src/components`: shared UI components (minimal use today).
 - `src/styles`: shared styling assets.
+- `server`: custom Node server and WS proxy for gateway bridging + access gate.
 - `public`: static assets.
 - `tests`, `playwright.config.ts`, `vitest.config.ts`: automated testing.
 
@@ -60,16 +62,17 @@ Flow:
 4. UI schedules focused and gateway patches through the coordinator; both paths converge on `/api/studio`.
 
 ### 2) Agent runtime (gateway)
-- **Client-side only**: `GatewayClient` uses WebSocket to connect to the gateway and wraps the vendored `GatewayBrowserClient`.
-- **API is not in the middle**: UI speaks directly to the gateway for streaming and agent events.
+- **Client-side boundary**: `GatewayClient` connects to Studio-origin `/api/gateway/ws` via `resolveStudioProxyGatewayUrl()` and wraps the vendored `GatewayBrowserClient`.
+- **Server-side boundary**: custom server proxy (`server/gateway-proxy.js`) is in the middle for upstream URL/token resolution and connect-frame token injection.
 
 Flow:
 1. UI loads gateway URL/token from `/api/studio` (defaulting to `NEXT_PUBLIC_GATEWAY_URL` if unset).
-2. `GatewayClient` connects + sends `connect` request.
-3. UI requests `agents.list` and builds session keys via `buildAgentMainSessionKey(agentId, mainKey)`.
-4. UI sends requests (frames) and receives event streams.
-5. A single gateway listener in `src/app/page.tsx` classifies `presence`/`heartbeat`/`chat`/`agent` events through `classifyGatewayEventKind` in `src/features/agents/state/runtimeEventBridge.ts`, then routes to summary-refresh or runtime stream handling.
-6. Agent store updates agent output/state.
+2. Browser opens WS to Studio `/api/gateway/ws` (`ws://` on `http`, `wss://` on `https`).
+3. Proxy loads upstream URL/token from Studio settings on the server and opens upstream WS.
+4. Proxy forwards `connect` and subsequent frames; it injects auth token server-side if the connect frame has none.
+5. UI requests `agents.list` and builds session keys via `buildAgentMainSessionKey(agentId, mainKey)`.
+6. A single gateway listener in `src/app/page.tsx` classifies `presence`/`heartbeat`/`chat`/`agent` events through `classifyGatewayEventKind` in `src/features/agents/state/runtimeEventBridge.ts`, then routes to summary-refresh or runtime stream handling.
+7. Agent store updates agent output/state.
 
 ### 3) Agent config + agent files
 - **Agent files**: `AGENTS.md`, `SOUL.md`, `IDENTITY.md`, `USER.md`, `TOOLS.md`, `HEARTBEAT.md`, `MEMORY.md`.
@@ -95,19 +98,21 @@ Flow:
 - **Read-model boundary**: `src/lib/task-control-plane/read-model.ts` converts raw Beads lists into the UI snapshot shape.
 
 ## Cross-cutting concerns
-- **Configuration**: environment variables are read directly from `process.env` (for example `NEXT_PUBLIC_GATEWAY_URL` for the client’s default gateway URL); `lib/clawdbot/paths.ts` resolves config path and state dirs, honoring `OPENCLAW_STATE_DIR`/`OPENCLAW_CONFIG_PATH` and legacy fallbacks. Studio settings live under `<state dir>/openclaw-studio/settings.json`.
+- **Configuration**: environment variables are read directly from `process.env` (for example `NEXT_PUBLIC_GATEWAY_URL` for client defaults and `STUDIO_UPSTREAM_GATEWAY_URL`/`STUDIO_UPSTREAM_GATEWAY_TOKEN` for server overrides). `lib/clawdbot/paths.ts` resolves config path/state dirs, honoring `OPENCLAW_STATE_DIR`/`OPENCLAW_CONFIG_PATH` and legacy fallbacks. Studio settings live under `<state dir>/openclaw-studio/settings.json`. When Studio token is missing, settings loaders can fall back to token/port from `<state dir>/openclaw.json`.
 - **Logging**: API routes and the gateway client use built-in `console.*` logging.
 - **Error handling**:
   - API routes return JSON `{ error }` with appropriate status.
   - `fetchJson` throws when `!res.ok`, surfaces errors to UI state.
   - `StudioSettingsCoordinator` logs failed async persistence writes (debounced flush or queued patch failures) so settings-save errors are observable.
+  - Gateway connect failures with `INVALID_REQUEST: invalid config` surface a doctor hint in Studio (`npx openclaw doctor --fix` / `pnpm openclaw doctor --fix`).
+  - Gateway browser client truncates close reasons to WebSocket protocol limits (123 UTF-8 bytes) to avoid client-side close exceptions on long error messages.
 - **Filesystem helpers**: server-only filesystem operations live at the API route boundaries. Home-scoped path autocomplete is implemented directly in `src/app/api/path-suggestions/route.ts`. These helpers are used for local settings and path suggestions, not for agent file edits.
 - **Tracing**: `src/instrumentation.ts` registers `@vercel/otel` for telemetry.
 - **Validation**: request payload validation in API routes and typed client/server helpers in `src/lib/*`.
 
 ## Major design decisions & trade-offs
 - **Local settings file over DB**: fast, local-first persistence for gateway connection + focused preferences; trade-off is no concurrency or multi-user support.
-- **WebSocket gateway direct to client**: lowest latency for streaming; trade-off is tighter coupling to the gateway protocol in the UI.
+- **Same-origin WS proxy instead of direct browser->gateway WS**: allows server-side token custody/injection and easier local/remote switching; trade-off is one extra hop and custom-server ownership.
 - **Gateway-first agent records**: records map 1:1 to `agents.list` entries with main sessions; trade-off is no local-only agent concept.
 - **Gateway-backed config + agent-file edits**: create/rename/heartbeat/delete via `config.patch`, agent files via gateway WebSocket `agents.files.get`/`agents.files.set`; trade-off is reliance on gateway availability.
 - **Narrow local config mutation boundary**: Studio does not write `openclaw.json` directly today; if a local-only integration is introduced, keep any local writes narrowly scoped to that integration and reuse shared list helpers instead of ad-hoc mutation paths; trade-off is less flexibility for local-only experimentation, but clearer ownership and lower drift risk.
@@ -129,11 +134,13 @@ C4Context
   title OpenClaw Studio - System Context
   Person(user, "User", "Operates agents locally")
   System(ui, "OpenClaw Studio", "Next.js App Router UI")
+  System(proxy, "Studio WS Proxy", "Custom server /api/gateway/ws")
   System_Ext(gateway, "OpenClaw Gateway", "WebSocket runtime")
   System_Ext(fs, "Local Filesystem", "settings.json and other local reads (e.g. path suggestions)")
 
   Rel(user, ui, "Uses")
-  Rel(ui, gateway, "WebSocket frames")
+  Rel(ui, proxy, "WebSocket frames")
+  Rel(proxy, gateway, "WebSocket frames")
   Rel(ui, fs, "HTTP to API routes -> fs read/write")
 ```
 
@@ -146,6 +153,7 @@ C4Container
   Container_Boundary(app, "Next.js App") {
     Container(client, "Client UI", "React", "Focused agent-management UI, state, gateway client")
     Container(api, "API Routes", "Next.js route handlers", "Studio settings, path suggestions, task control plane")
+    Container(proxy, "WS Proxy", "Custom Node server", "Bridges /api/gateway/ws to upstream gateway with token injection")
   }
 
   Container_Ext(gateway, "Gateway", "WebSocket", "Agent runtime")
@@ -153,8 +161,10 @@ C4Container
 
   Rel(user, client, "Uses")
   Rel(client, api, "HTTP JSON")
-  Rel(client, gateway, "WebSocket")
+  Rel(client, proxy, "WebSocket /api/gateway/ws")
+  Rel(proxy, gateway, "WebSocket")
   Rel(api, fs, "Read/Write")
+  Rel(proxy, fs, "Read settings/token")
 ```
 
 ## Explicit forbidden patterns
