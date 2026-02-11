@@ -2,9 +2,6 @@
   "name": "openclaw-studio",
   "version": "0.1.0",
   "private": true,
-  "bin": {
-    "openclaw-studio": "cli/openclaw-studio.js"
-  },
   "scripts": {
     "dev": "node server/index.js --dev",
     "dev:turbo": "node server/index.js --dev",

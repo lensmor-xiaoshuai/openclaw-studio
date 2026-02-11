@@ -67,7 +67,7 @@ Take the HTTPS URL from `tailscale serve status` and convert it to a WebSocket U
 
 ### Install + run Studio (recommended)
 ```bash
-npx -y openclaw-studio
+npx -y openclaw-studio@latest
 cd openclaw-studio
 npm run dev
 ```
