@@ -370,6 +370,22 @@ export type GatewayBrowserClientOptions = {
 };
 
 const CONNECT_FAILED_CLOSE_CODE = 4008;
+const WS_CLOSE_REASON_MAX_BYTES = 123;
+
+function truncateWsCloseReason(reason: string, maxBytes = WS_CLOSE_REASON_MAX_BYTES): string {
+  const trimmed = reason.trim();
+  if (!trimmed) return "connect failed";
+  const encoder = new TextEncoder();
+  if (encoder.encode(trimmed).byteLength <= maxBytes) return trimmed;
+
+  let out = "";
+  for (const char of trimmed) {
+    const next = out + char;
+    if (encoder.encode(next).byteLength > maxBytes) break;
+    out = next;
+  }
+  return out.trimEnd() || "connect failed";
+}
 
 export class GatewayBrowserClient {
   private ws: WebSocket | null = null;
@@ -533,10 +549,14 @@ export class GatewayBrowserClient {
         if (canFallbackToShared && deviceIdentity) {
           clearDeviceAuthToken({ deviceId: deviceIdentity.deviceId, role, scope: authScopeKey });
         }
-        const reason =
+        const rawReason =
           err instanceof GatewayResponseError
             ? `connect failed: ${err.code} ${err.message}`
             : "connect failed";
+        const reason = truncateWsCloseReason(rawReason);
+        if (reason !== rawReason) {
+          console.warn("[gateway] connect close reason truncated to 123 UTF-8 bytes");
+        }
         this.ws?.close(CONNECT_FAILED_CLOSE_CODE, reason);
       });
   }

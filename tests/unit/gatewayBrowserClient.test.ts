@@ -10,6 +10,7 @@ class MockWebSocket {
   static CLOSED = 3;
   static instances: MockWebSocket[] = [];
   static sent: string[] = [];
+  static closes: Array<{ code: number; reason: string }> = [];
 
   readyState = MockWebSocket.OPEN;
   onopen: (() => void) | null = null;
@@ -26,6 +27,7 @@ class MockWebSocket {
   }
 
   close(code?: number, reason?: string) {
+    MockWebSocket.closes.push({ code: code ?? 1000, reason: reason ?? "" });
     this.readyState = MockWebSocket.CLOSED;
     this.onclose?.({ code: code ?? 1000, reason: reason ?? "" } as CloseEvent);
   }
@@ -38,6 +40,7 @@ describe("GatewayBrowserClient", () => {
   beforeEach(() => {
     MockWebSocket.instances = [];
     MockWebSocket.sent = [];
+    MockWebSocket.closes = [];
     globalThis.WebSocket = MockWebSocket as unknown as typeof WebSocket;
     if (globalThis.crypto) {
       Object.defineProperty(globalThis.crypto, "subtle", {
@@ -89,5 +92,45 @@ describe("GatewayBrowserClient", () => {
     expect(typeof frame.id).toBe("string");
     expect(frame.id).toMatch(UUID_V4_RE);
     expect(frame.params?.client?.id).toBe("openclaw-control-ui");
+  });
+
+  it("truncates connect-failed close reason to websocket limit", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const client = new GatewayBrowserClient({ url: "ws://example.com", token: "secret" });
+    client.start();
+
+    const ws = MockWebSocket.instances[0];
+    if (!ws) {
+      throw new Error("WebSocket not created");
+    }
+
+    ws.onopen?.();
+    vi.runAllTimers();
+
+    const connectFrame = JSON.parse(MockWebSocket.sent[0] ?? "{}");
+    const connectId = String(connectFrame.id ?? "");
+    expect(connectId).toMatch(UUID_V4_RE);
+
+    ws.onmessage?.({
+      data: JSON.stringify({
+        type: "res",
+        id: connectId,
+        ok: false,
+        error: {
+          code: "INVALID_REQUEST",
+          message: `invalid config ${"x".repeat(260)}`,
+        },
+      }),
+    } as MessageEvent);
+
+    await vi.runAllTicks();
+    await vi.runAllTimersAsync();
+    await Promise.resolve();
+
+    const lastClose = MockWebSocket.closes.at(-1);
+    expect(lastClose?.code).toBe(4008);
+    expect(lastClose?.reason.startsWith("connect failed: INVALID_REQUEST")).toBe(true);
+    expect(new TextEncoder().encode(lastClose?.reason ?? "").byteLength).toBeLessThanOrEqual(123);
+    warnSpy.mockRestore();
   });
 });
