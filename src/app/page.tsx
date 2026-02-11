@@ -1842,6 +1842,7 @@ const AgentStudioPage = () => {
                 onTokenChange={setToken}
                 onConnect={() => void connect()}
                 onDisconnect={disconnect}
+                onClose={() => setShowConnectionPanel(false)}
               />
             </div>
           </div>
