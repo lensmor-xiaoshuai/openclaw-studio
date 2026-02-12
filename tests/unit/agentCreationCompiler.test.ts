@@ -2,18 +2,17 @@ import { describe, expect, it } from "vitest";
 import {
   compileGuidedAgentCreation,
   createDefaultGuidedDraft,
+  resolveGuidedControlsForPreset,
 } from "@/features/agents/creation/compiler";
 
-const createValidDraft = () => {
+const createDraft = () => {
   const draft = createDefaultGuidedDraft();
   return {
     ...draft,
-    primaryOutcome: "Ship polished release notes every week.",
-    successCriteria: ["Draft is ready in under 10 minutes.", "No factual errors.", "Includes clear next steps."],
-    nonGoals: ["Do not post publicly.", "Do not auto-merge PRs.", "Do not message customers."],
-    exampleTasks: ["Summarize merged PRs from this week.", "Draft release note highlights."],
-    failureMode: "Publishing inaccurate public updates.",
-    tone: "Direct and structured.",
+    starterKit: "engineer" as const,
+    controlLevel: "balanced" as const,
+    firstTask: "Refactor React components and open small diffs.",
+    customInstructions: "Prefer minimal, test-backed diffs.",
     userProfile: "Product engineer who prefers concise summaries.",
     toolNotes: "Use git history and markdown formatting conventions.",
     memoryNotes: "Remember recurring formatting preferences.",
@@ -23,90 +22,99 @@ const createValidDraft = () => {
 };
 
 describe("compileGuidedAgentCreation", () => {
-  it("reports required field errors for incomplete drafts", () => {
+  it("compiles default starter draft without legacy outcome-form errors", () => {
     const result = compileGuidedAgentCreation({
       name: "Agent",
       draft: createDefaultGuidedDraft(),
     });
-    expect(result.validation.errors).toContain("Primary outcome is required.");
-    expect(result.validation.errors).toContain("Add at least 3 success criteria.");
-    expect(result.validation.errors).toContain("Add at least 3 non-goals.");
-    expect(result.validation.errors).toContain("Add at least 2 example tasks.");
-    expect(result.validation.errors).toContain("Failure mode is required.");
+    expect(result.validation.errors).toEqual([]);
   });
 
-  it("compiles deterministic files and per-agent overrides", () => {
-    const draft = createValidDraft();
+  it("maps researcher + conservative to safe defaults", () => {
+    const draft = createDraft();
+    draft.starterKit = "researcher";
+    draft.controlLevel = "conservative";
+    draft.controls = resolveGuidedControlsForPreset({
+      starterKit: draft.starterKit,
+      controlLevel: draft.controlLevel,
+    });
     const result = compileGuidedAgentCreation({
-      name: "Release Agent",
+      name: "Research Agent",
       draft,
     });
+
     expect(result.validation.errors).toEqual([]);
-    expect(result.files["AGENTS.md"]).toContain("# Mission");
-    expect(result.files["SOUL.md"]).toContain("# Voice");
-    expect(result.files["IDENTITY.md"]).toContain("Release Agent");
     expect(result.agentOverrides.sandbox).toEqual({
       mode: "non-main",
       workspaceAccess: "ro",
     });
-    expect(result.agentOverrides.tools?.profile).toBe("coding");
+    expect(result.agentOverrides.tools?.profile).toBe("minimal");
     expect(result.agentOverrides.tools?.allow).toBeUndefined();
+    expect(result.agentOverrides.tools?.alsoAllow).toContain("group:web");
+    expect(result.agentOverrides.tools?.deny).toContain("group:runtime");
+    expect(result.execApprovals).toBeNull();
+  });
+
+  it("maps engineer + balanced to coding defaults with runtime enabled", () => {
+    const draft = createDraft();
+    draft.starterKit = "engineer";
+    draft.controlLevel = "balanced";
+    draft.controls = resolveGuidedControlsForPreset({
+      starterKit: draft.starterKit,
+      controlLevel: draft.controlLevel,
+    });
+    const result = compileGuidedAgentCreation({
+      name: "Engineer Agent",
+      draft,
+    });
+
+    expect(result.validation.errors).toEqual([]);
+    expect(result.files["AGENTS.md"]).toContain("First Task");
+    expect(result.files["AGENTS.md"]).toContain("Refactor React components");
+    expect(result.agentOverrides.tools?.profile).toBe("coding");
     expect(result.agentOverrides.tools?.alsoAllow).toContain("group:runtime");
     expect(result.agentOverrides.tools?.deny).not.toContain("group:runtime");
     expect(result.execApprovals).toEqual({
       security: "allowlist",
-      ask: "always",
+      ask: "on-miss",
       allowlist: [],
     });
   });
 
-  it("uses additive alsoAllow and deny for runtime control toggles", () => {
-    const disabledExecDraft = createValidDraft();
-    disabledExecDraft.controls.allowExec = false;
-
-    const disabledResult = compileGuidedAgentCreation({
-      name: "No Exec Agent",
-      draft: disabledExecDraft,
+  it("maps marketer + conservative to messaging defaults", () => {
+    const draft = createDraft();
+    draft.starterKit = "marketer";
+    draft.controlLevel = "conservative";
+    draft.controls = resolveGuidedControlsForPreset({
+      starterKit: draft.starterKit,
+      controlLevel: draft.controlLevel,
     });
-
-    expect(disabledResult.agentOverrides.tools?.allow).toBeUndefined();
-    expect(disabledResult.agentOverrides.tools?.alsoAllow).toEqual([]);
-    expect(disabledResult.agentOverrides.tools?.deny).toContain("group:runtime");
-    expect(disabledResult.execApprovals).toBeNull();
-
-    const enabledExecDraft = createValidDraft();
-    enabledExecDraft.controls.toolsAllow = ["group:web", "group:web", " group:runtime "];
-    enabledExecDraft.controls.toolsDeny = ["group:runtime", "group:fs", "group:fs"];
-
-    const enabledResult = compileGuidedAgentCreation({
-      name: "Exec Agent",
-      draft: enabledExecDraft,
-    });
-
-    expect(enabledResult.agentOverrides.tools?.allow).toBeUndefined();
-    expect(enabledResult.agentOverrides.tools?.alsoAllow).toEqual(["group:web", "group:runtime"]);
-    expect(enabledResult.agentOverrides.tools?.deny).toEqual(["group:fs"]);
-  });
-
-  it("blocks contradictory control selections", () => {
-    const draft = createValidDraft();
-    draft.controls.execAutonomy = "auto";
-    draft.controls.approvalSecurity = "deny";
-    draft.controls.fileEditAutonomy = "auto-edit";
-    draft.controls.workspaceAccess = "none";
-    draft.controls.allowExec = false;
-
     const result = compileGuidedAgentCreation({
-      name: "Contradictory Agent",
+      name: "Marketing Agent",
       draft,
     });
 
-    expect(result.validation.errors).toContain(
-      "Auto exec cannot be enabled when approval security is set to deny."
-    );
-    expect(result.validation.errors).toContain(
-      "Auto file edits require sandbox workspace access ro or rw."
-    );
+    expect(result.validation.errors).toEqual([]);
+    expect(result.agentOverrides.tools?.profile).toBe("messaging");
+    expect(result.agentOverrides.tools?.alsoAllow).toContain("group:web");
+    expect(result.agentOverrides.tools?.deny).toContain("group:runtime");
+    expect(result.execApprovals).toBeNull();
+  });
+
+  it("keeps contradiction validation for manual control overrides", () => {
+    const draft = createDraft();
+    draft.controlLevel = "autopilot";
+    draft.controls = resolveGuidedControlsForPreset({
+      starterKit: draft.starterKit,
+      controlLevel: draft.controlLevel,
+    });
+    draft.controls.allowExec = false;
+
+    const result = compileGuidedAgentCreation({
+      name: "Broken Agent",
+      draft,
+    });
+
     expect(result.validation.errors).toContain("Auto exec requires runtime tools to be enabled.");
   });
 });

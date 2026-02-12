@@ -1,7 +1,10 @@
 import type { AgentFileName } from "@/lib/agents/agentFiles";
 import type {
+  AgentControlLevel,
+  AgentStarterKit,
   GuidedAgentCreationCompileResult,
   GuidedAgentCreationDraft,
+  GuidedCreationControls,
 } from "@/features/agents/creation/types";
 
 const normalizeLineList = (values: string[]): string[] => {
@@ -29,31 +32,198 @@ const defaultHeartbeatChecklist = [
   "If nothing needs attention, reply HEARTBEAT_OK.",
 ];
 
+type StarterTemplate = {
+  label: string;
+  role: string;
+  mission: string;
+  tone: string;
+  guardrails: string[];
+  defaultFirstTask: string;
+  exampleTasks: string[];
+  toolsProfile: GuidedCreationControls["toolsProfile"];
+  allowExecByDefault: boolean;
+  baseAlsoAllow: string[];
+  baseDeny: string[];
+};
+
+const STARTER_TEMPLATES: Record<AgentStarterKit, StarterTemplate> = {
+  researcher: {
+    label: "Researcher",
+    role: "Research analyst",
+    mission: "Collect trustworthy sources and synthesize concise findings.",
+    tone: "Be precise, cite uncertainty clearly, and avoid unsupported claims.",
+    guardrails: [
+      "Do not invent sources or confidence.",
+      "Highlight unknowns explicitly.",
+      "Prefer summaries with citations over broad advice.",
+    ],
+    defaultFirstTask: "Research current options and produce a cited decision brief.",
+    exampleTasks: [
+      "Compare two approaches with pros, cons, and source notes.",
+      "Summarize updates from the last week with evidence links.",
+    ],
+    toolsProfile: "minimal",
+    allowExecByDefault: false,
+    baseAlsoAllow: ["group:web"],
+    baseDeny: ["group:runtime"],
+  },
+  engineer: {
+    label: "Software Engineer",
+    role: "Software engineer",
+    mission: "Implement safe, test-backed code changes with minimal diff surface area.",
+    tone: "Be direct, specific, and explicit about risks and tradeoffs.",
+    guardrails: [
+      "Prefer small changes over broad refactors.",
+      "Explain file-level impact before risky edits.",
+      "Call out test coverage and remaining risk.",
+    ],
+    defaultFirstTask: "Fix one scoped issue and include tests that prove the behavior.",
+    exampleTasks: [
+      "Implement a focused feature with tests and concise notes.",
+      "Debug a failing test and submit a minimal patch.",
+    ],
+    toolsProfile: "coding",
+    allowExecByDefault: true,
+    baseAlsoAllow: [],
+    baseDeny: [],
+  },
+  marketer: {
+    label: "Digital Marketer",
+    role: "Marketing operator",
+    mission: "Draft growth assets and recommendations without publishing externally by default.",
+    tone: "Be practical, outcome-oriented, and audience-aware.",
+    guardrails: [
+      "Do not publish or send outbound messages without explicit approval.",
+      "Call out assumptions about audience and channel fit.",
+      "Prefer reusable messaging frameworks over one-off copy.",
+    ],
+    defaultFirstTask: "Draft a campaign brief with channel-specific copy suggestions.",
+    exampleTasks: [
+      "Create social copy variants for one announcement.",
+      "Draft a weekly marketing summary with next actions.",
+    ],
+    toolsProfile: "messaging",
+    allowExecByDefault: false,
+    baseAlsoAllow: ["group:web"],
+    baseDeny: ["group:runtime"],
+  },
+  "chief-of-staff": {
+    label: "Chief of Staff",
+    role: "Operations coordinator",
+    mission: "Track priorities, summarize status, and keep follow-ups moving.",
+    tone: "Be concise, structured, and deadline-aware.",
+    guardrails: [
+      "Escalate blockers early.",
+      "Keep summaries action-focused.",
+      "Avoid acting externally without approval.",
+    ],
+    defaultFirstTask: "Create a short weekly operating review with priorities and blockers.",
+    exampleTasks: [
+      "Summarize active work and identify the top blocker.",
+      "Draft a weekly checkpoint with owners and deadlines.",
+    ],
+    toolsProfile: "minimal",
+    allowExecByDefault: false,
+    baseAlsoAllow: [],
+    baseDeny: ["group:runtime"],
+  },
+  blank: {
+    label: "Blank Starter",
+    role: "General assistant",
+    mission: "Provide practical support with explicit boundaries and clear next actions.",
+    tone: "Be clear, concise, and transparent about uncertainty.",
+    guardrails: [
+      "Ask before taking irreversible actions.",
+      "Prefer concrete next steps over abstract advice.",
+      "State assumptions when context is incomplete.",
+    ],
+    defaultFirstTask: "Handle one concrete task end-to-end and summarize results.",
+    exampleTasks: [
+      "Draft a plan for a requested task.",
+      "Summarize recent activity and propose next steps.",
+    ],
+    toolsProfile: "minimal",
+    allowExecByDefault: false,
+    baseAlsoAllow: [],
+    baseDeny: ["group:runtime"],
+  },
+};
+
+type ControlDefaults = {
+  execAutonomy: GuidedCreationControls["execAutonomy"];
+  fileEditAutonomy: GuidedCreationControls["fileEditAutonomy"];
+  sandboxMode: GuidedCreationControls["sandboxMode"];
+  workspaceAccess: GuidedCreationControls["workspaceAccess"];
+  approvalSecurity: GuidedCreationControls["approvalSecurity"];
+  approvalAsk: GuidedCreationControls["approvalAsk"];
+};
+
+const CONTROL_DEFAULTS: Record<AgentControlLevel, ControlDefaults> = {
+  conservative: {
+    execAutonomy: "ask-first",
+    fileEditAutonomy: "propose-only",
+    sandboxMode: "non-main",
+    workspaceAccess: "ro",
+    approvalSecurity: "allowlist",
+    approvalAsk: "always",
+  },
+  balanced: {
+    execAutonomy: "ask-first",
+    fileEditAutonomy: "propose-only",
+    sandboxMode: "non-main",
+    workspaceAccess: "ro",
+    approvalSecurity: "allowlist",
+    approvalAsk: "on-miss",
+  },
+  autopilot: {
+    execAutonomy: "auto",
+    fileEditAutonomy: "auto-edit",
+    sandboxMode: "all",
+    workspaceAccess: "rw",
+    approvalSecurity: "full",
+    approvalAsk: "off",
+  },
+};
+
+const resolveStarterTemplate = (starterKit: AgentStarterKit): StarterTemplate =>
+  STARTER_TEMPLATES[starterKit] ?? STARTER_TEMPLATES.engineer;
+
+export const resolveGuidedControlsForPreset = (params: {
+  starterKit: AgentStarterKit;
+  controlLevel: AgentControlLevel;
+}): GuidedCreationControls => {
+  const starter = resolveStarterTemplate(params.starterKit);
+  const control = CONTROL_DEFAULTS[params.controlLevel];
+  const allowExec = params.controlLevel === "autopilot" ? true : starter.allowExecByDefault;
+  return {
+    allowExec,
+    execAutonomy: control.execAutonomy,
+    fileEditAutonomy: control.fileEditAutonomy,
+    sandboxMode: control.sandboxMode,
+    workspaceAccess: control.workspaceAccess,
+    toolsProfile: starter.toolsProfile,
+    toolsAllow: [...starter.baseAlsoAllow],
+    toolsDeny: [...starter.baseDeny],
+    approvalSecurity: control.approvalSecurity,
+    approvalAsk: control.approvalAsk,
+    approvalAllowlist: [],
+  };
+};
+
 export const createDefaultGuidedDraft = (): GuidedAgentCreationDraft => ({
-  primaryOutcome: "",
-  successCriteria: ["", "", ""],
-  nonGoals: ["", "", ""],
-  exampleTasks: ["", ""],
-  failureMode: "",
-  tone: "",
+  starterKit: "engineer",
+  controlLevel: "balanced",
+  firstTask: "",
+  customInstructions: "",
   userProfile: "",
   toolNotes: "",
   memoryNotes: "",
   heartbeatEnabled: false,
   heartbeatChecklist: [...defaultHeartbeatChecklist],
-  controls: {
-    allowExec: true,
-    execAutonomy: "ask-first",
-    fileEditAutonomy: "propose-only",
-    sandboxMode: "non-main",
-    workspaceAccess: "ro",
-    toolsProfile: "coding",
-    toolsAllow: [],
-    toolsDeny: [],
-    approvalSecurity: "allowlist",
-    approvalAsk: "always",
-    approvalAllowlist: [],
-  },
+  controls: resolveGuidedControlsForPreset({
+    starterKit: "engineer",
+    controlLevel: "balanced",
+  }),
 });
 
 export const compileGuidedAgentCreation = (params: {
@@ -61,12 +231,9 @@ export const compileGuidedAgentCreation = (params: {
   draft: GuidedAgentCreationDraft;
 }): GuidedAgentCreationCompileResult => {
   const name = params.name.trim();
-  const primaryOutcome = params.draft.primaryOutcome.trim();
-  const successCriteria = normalizeLineList(params.draft.successCriteria);
-  const nonGoals = normalizeLineList(params.draft.nonGoals);
-  const exampleTasks = normalizeLineList(params.draft.exampleTasks);
-  const failureMode = params.draft.failureMode.trim();
-  const tone = params.draft.tone.trim();
+  const starter = resolveStarterTemplate(params.draft.starterKit);
+  const firstTask = firstNonEmpty(params.draft.firstTask, starter.defaultFirstTask);
+  const customInstructions = params.draft.customInstructions.trim();
   const userProfile = params.draft.userProfile.trim();
   const toolNotes = params.draft.toolNotes.trim();
   const memoryNotes = params.draft.memoryNotes.trim();
@@ -97,12 +264,6 @@ export const compileGuidedAgentCreation = (params: {
   const warnings: string[] = [];
 
   if (!name) errors.push("Agent name is required.");
-  if (!primaryOutcome) errors.push("Primary outcome is required.");
-  if (successCriteria.length < 3) errors.push("Add at least 3 success criteria.");
-  if (nonGoals.length < 3) errors.push("Add at least 3 non-goals.");
-  if (exampleTasks.length < 2) errors.push("Add at least 2 example tasks.");
-  if (!failureMode) errors.push("Failure mode is required.");
-
   if (params.draft.controls.execAutonomy === "auto" && params.draft.controls.approvalSecurity === "deny") {
     errors.push("Auto exec cannot be enabled when approval security is set to deny.");
   }
@@ -116,13 +277,13 @@ export const compileGuidedAgentCreation = (params: {
     errors.push("Auto exec requires runtime tools to be enabled.");
   }
 
-  if (!tone) {
-    warnings.push("Tone is empty; SOUL.md will use a neutral default voice.");
+  if (!params.draft.firstTask.trim()) {
+    warnings.push("First task is empty; using starter template default.");
   }
   if (!userProfile) {
     warnings.push("User profile is empty; USER.md will use a minimal default.");
   }
-  if (params.draft.controls.approvalSecurity === "allowlist" && approvalAllowlist.length === 0) {
+  if (params.draft.controls.allowExec && params.draft.controls.approvalSecurity === "allowlist" && approvalAllowlist.length === 0) {
     warnings.push("Approval security is allowlist with no patterns yet.");
   }
 
@@ -138,42 +299,36 @@ export const compileGuidedAgentCreation = (params: {
   const files: Partial<Record<AgentFileName, string>> = {
     "AGENTS.md": [
       "# Mission",
-      firstNonEmpty(primaryOutcome, "Define a clear outcome for this agent."),
+      starter.mission,
       "",
-      "## Success Criteria",
-      successCriteria.length > 0
-        ? renderList(successCriteria, "1")
-        : "1. Add success criteria during setup.",
-      "",
-      "## Non-Goals",
-      nonGoals.length > 0 ? renderList(nonGoals, "-") : "- Define non-goals during setup.",
+      "## First Task",
+      firstTask,
       "",
       "## Example Tasks",
-      exampleTasks.length > 0 ? renderList(exampleTasks, "-") : "- Add two realistic tasks.",
+      renderList(starter.exampleTasks, "-"),
+      "",
+      "## Guardrails",
+      renderList(starter.guardrails, "-"),
+      customInstructions ? `\n## Custom Instructions\n${customInstructions}` : "",
       "",
       "## Operating Rules",
       `- ${uncertaintyRule}`,
       `- ${fileEditRule}`,
-      `- Avoid this failure mode: ${firstNonEmpty(failureMode, "Undefined risky behavior.")}`,
-    ].join("\n"),
+    ]
+      .filter((line) => line !== "")
+      .join("\n"),
     "SOUL.md": [
       "# Voice",
-      firstNonEmpty(
-        tone,
-        "Be concise, direct, and transparent about assumptions and risk."
-      ),
+      starter.tone,
       "",
       "# Boundaries",
-      `- Do not optimize for outcomes that conflict with: ${firstNonEmpty(
-        nonGoals[0] ?? "",
-        "the non-goals in AGENTS.md"
-      )}.`,
-      `- Protect against: ${firstNonEmpty(failureMode, "irreversible mistakes")}.`,
+      renderList(starter.guardrails, "-"),
     ].join("\n"),
     "IDENTITY.md": [
       "# Identity",
       `- Name: ${firstNonEmpty(name, "New Agent")}`,
-      `- Role: ${firstNonEmpty(primaryOutcome, "Assistant")}`,
+      `- Role: ${starter.role}`,
+      `- Starter kit: ${starter.label}`,
     ].join("\n"),
     "USER.md": [
       "# User",
@@ -198,15 +353,14 @@ export const compileGuidedAgentCreation = (params: {
   };
 
   const summary = [
+    `Starter: ${starter.label}`,
+    `Control level: ${params.draft.controlLevel}`,
     `Sandbox: ${params.draft.controls.sandboxMode}`,
     `Workspace access: ${params.draft.controls.workspaceAccess}`,
     `Tools profile: ${params.draft.controls.toolsProfile}`,
     params.draft.controls.allowExec
       ? `Exec approvals: ${params.draft.controls.approvalSecurity} / ${params.draft.controls.approvalAsk}`
       : "Exec tools: disabled (group:runtime denied)",
-    `Uncertainty behavior: ${
-      params.draft.controls.execAutonomy === "auto" ? "act with bounds" : "ask first"
-    }`,
   ];
 
   return {

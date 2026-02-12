@@ -5,6 +5,14 @@ import type {
   GatewayExecApprovalSecurity,
 } from "@/lib/gateway/execApprovals";
 
+export type AgentStarterKit =
+  | "researcher"
+  | "engineer"
+  | "marketer"
+  | "chief-of-staff"
+  | "blank";
+export type AgentControlLevel = "conservative" | "balanced" | "autopilot";
+
 export type GuidedExecAutonomy = "ask-first" | "auto";
 export type GuidedFileEditAutonomy = "propose-only" | "auto-edit";
 
@@ -23,12 +31,10 @@ export type GuidedCreationControls = {
 };
 
 export type GuidedAgentCreationDraft = {
-  primaryOutcome: string;
-  successCriteria: string[];
-  nonGoals: string[];
-  exampleTasks: string[];
-  failureMode: string;
-  tone: string;
+  starterKit: AgentStarterKit;
+  controlLevel: AgentControlLevel;
+  firstTask: string;
+  customInstructions: string;
   userProfile: string;
   toolNotes: string;
   memoryNotes: string;
