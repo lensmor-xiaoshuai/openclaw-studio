@@ -6,6 +6,7 @@ export const PENDING_GUIDED_SETUP_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 type SerializedPendingGuidedSetupEntry = {
   agentId: string;
+  gatewayScope: string;
   setup: AgentGuidedSetup;
   savedAtMs: number;
 };
@@ -27,6 +28,13 @@ const parseAgentId = (value: unknown): string | null => {
   return trimmed.length > 0 ? trimmed : null;
 };
 
+export const normalizePendingGuidedSetupGatewayScope = (
+  value: unknown
+): string => {
+  if (typeof value !== "string") return "";
+  return value.trim().toLowerCase();
+};
+
 const isGuidedSetup = (value: unknown): value is AgentGuidedSetup => {
   if (!isRecord(value)) return false;
   if (!isRecord(value.agentOverrides)) return false;
@@ -38,59 +46,115 @@ const isGuidedSetup = (value: unknown): value is AgentGuidedSetup => {
   return true;
 };
 
-const parseStore = (raw: string, params: { nowMs: number; maxAgeMs: number }) => {
+const readStorageItem = (storage: Storage, key: string): string | null => {
+  try {
+    return storage.getItem(key);
+  } catch (err) {
+    console.warn(`Failed to read pending guided setup store "${key}".`, err);
+    return null;
+  }
+};
+
+const writeStorageItem = (storage: Storage, key: string, value: string): void => {
+  try {
+    storage.setItem(key, value);
+  } catch (err) {
+    console.warn(`Failed to write pending guided setup store "${key}".`, err);
+  }
+};
+
+const removeStorageItem = (storage: Storage, key: string): void => {
+  try {
+    storage.removeItem(key);
+  } catch (err) {
+    console.warn(`Failed to remove pending guided setup store "${key}".`, err);
+  }
+};
+
+const parseStoreEntries = (raw: string, params: { nowMs: number; maxAgeMs: number }) => {
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw) as unknown;
   } catch {
-    return {} as Record<string, AgentGuidedSetup>;
+    return [] as SerializedPendingGuidedSetupEntry[];
   }
   if (!isRecord(parsed) || parsed.version !== PENDING_GUIDED_SETUP_STORE_VERSION) {
-    return {} as Record<string, AgentGuidedSetup>;
+    return [] as SerializedPendingGuidedSetupEntry[];
   }
   const entriesRaw = Array.isArray(parsed.entries) ? parsed.entries : [];
-  const next: Record<string, AgentGuidedSetup> = {};
+  const next: SerializedPendingGuidedSetupEntry[] = [];
   for (const entry of entriesRaw) {
     if (!isRecord(entry)) continue;
     const agentId = parseAgentId(entry.agentId);
+    const gatewayScope = normalizePendingGuidedSetupGatewayScope(entry.gatewayScope);
     const savedAtMs = asFiniteNumber(entry.savedAtMs);
     if (!agentId || savedAtMs === null || savedAtMs < params.nowMs - params.maxAgeMs) continue;
     if (!isGuidedSetup(entry.setup)) continue;
-    next[agentId] = entry.setup;
+    next.push({
+      agentId,
+      gatewayScope,
+      setup: entry.setup,
+      savedAtMs,
+    });
   }
   return next;
 };
 
 export const loadPendingGuidedSetupsFromStorage = (params: {
   storage: Storage | null | undefined;
+  gatewayScope?: string | null;
   nowMs?: number;
   maxAgeMs?: number;
 }): Record<string, AgentGuidedSetup> => {
   if (!params.storage) return {};
-  const raw = params.storage.getItem(PENDING_GUIDED_SETUP_SESSION_KEY);
+  const raw = readStorageItem(params.storage, PENDING_GUIDED_SETUP_SESSION_KEY);
   if (!raw) return {};
-  return parseStore(raw, {
+  const gatewayScope = normalizePendingGuidedSetupGatewayScope(params.gatewayScope);
+  const entries = parseStoreEntries(raw, {
     nowMs: params.nowMs ?? Date.now(),
     maxAgeMs: params.maxAgeMs ?? PENDING_GUIDED_SETUP_MAX_AGE_MS,
   });
+  const next: Record<string, AgentGuidedSetup> = {};
+  for (const entry of entries) {
+    if (entry.gatewayScope !== gatewayScope) continue;
+    next[entry.agentId] = entry.setup;
+  }
+  return next;
 };
 
 export const persistPendingGuidedSetupsToStorage = (params: {
   storage: Storage | null | undefined;
+  gatewayScope?: string | null;
   setupsByAgentId: Record<string, AgentGuidedSetup>;
   nowMs?: number;
 }): void => {
   if (!params.storage) return;
-  const entries: SerializedPendingGuidedSetupEntry[] = Object.entries(params.setupsByAgentId)
-    .map(([agentId, setup]) => ({ agentId: agentId.trim(), setup, savedAtMs: params.nowMs ?? Date.now() }))
+  const nowMs = params.nowMs ?? Date.now();
+  const gatewayScope = normalizePendingGuidedSetupGatewayScope(params.gatewayScope);
+  const raw = readStorageItem(params.storage, PENDING_GUIDED_SETUP_SESSION_KEY);
+  const existingEntries = raw
+    ? parseStoreEntries(raw, {
+        nowMs,
+        maxAgeMs: PENDING_GUIDED_SETUP_MAX_AGE_MS,
+      })
+    : [];
+  const retainedEntries = existingEntries.filter((entry) => entry.gatewayScope !== gatewayScope);
+  const scopedEntries: SerializedPendingGuidedSetupEntry[] = Object.entries(params.setupsByAgentId)
+    .map(([agentId, setup]) => ({
+      agentId: agentId.trim(),
+      gatewayScope,
+      setup,
+      savedAtMs: nowMs,
+    }))
     .filter((entry) => entry.agentId.length > 0);
+  const entries = [...retainedEntries, ...scopedEntries];
   if (entries.length === 0) {
-    params.storage.removeItem(PENDING_GUIDED_SETUP_SESSION_KEY);
+    removeStorageItem(params.storage, PENDING_GUIDED_SETUP_SESSION_KEY);
     return;
   }
   const payload: SerializedPendingGuidedSetupStore = {
     version: PENDING_GUIDED_SETUP_STORE_VERSION,
     entries,
   };
-  params.storage.setItem(PENDING_GUIDED_SETUP_SESSION_KEY, JSON.stringify(payload));
+  writeStorageItem(params.storage, PENDING_GUIDED_SETUP_SESSION_KEY, JSON.stringify(payload));
 };

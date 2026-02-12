@@ -75,6 +75,7 @@ import {
 } from "@/features/agents/creation/recovery";
 import {
   loadPendingGuidedSetupsFromStorage,
+  normalizePendingGuidedSetupGatewayScope,
   persistPendingGuidedSetupsToStorage,
 } from "@/features/agents/creation/pendingSetupStore";
 import {
@@ -280,7 +281,9 @@ const AgentStudioPage = () => {
   const [pendingCreateSetupsByAgentId, setPendingCreateSetupsByAgentId] = useState<
     Record<string, AgentGuidedSetup>
   >({});
-  const [pendingCreateSetupsLoaded, setPendingCreateSetupsLoaded] = useState(false);
+  const [pendingCreateSetupsLoadedScope, setPendingCreateSetupsLoadedScope] = useState<
+    string | null
+  >(null);
   const [retryPendingSetupBusyAgentId, setRetryPendingSetupBusyAgentId] = useState<string | null>(
     null
   );
@@ -363,6 +366,10 @@ const AgentStudioPage = () => {
   );
   const hasRunningAgents = runningAgentCount > 0;
   const isLocalGateway = useMemo(() => isLocalGatewayUrl(gatewayUrl), [gatewayUrl]);
+  const pendingGuidedSetupGatewayScope = useMemo(
+    () => normalizePendingGuidedSetupGatewayScope(gatewayUrl),
+    [gatewayUrl]
+  );
 
   const hasRestartBlockInProgress = Boolean(
     (deleteAgentBlock && deleteAgentBlock.phase !== "queued") ||
@@ -786,23 +793,31 @@ const AgentStudioPage = () => {
   useEffect(() => {
     const loaded = loadPendingGuidedSetupsFromStorage({
       storage: window.sessionStorage,
+      gatewayScope: pendingGuidedSetupGatewayScope,
     });
     setPendingCreateSetupsByAgentId(loaded);
-    setPendingCreateSetupsLoaded(true);
-  }, []);
+    setPendingCreateSetupsLoadedScope(pendingGuidedSetupGatewayScope);
+  }, [pendingGuidedSetupGatewayScope]);
 
   useEffect(() => {
-    if (!pendingCreateSetupsLoaded) return;
+    pendingSetupAutoRetryAttemptedRef.current.clear();
+    pendingSetupAutoRetryInFlightRef.current.clear();
+    setRetryPendingSetupBusyAgentId(null);
+  }, [pendingGuidedSetupGatewayScope]);
+
+  useEffect(() => {
+    if (pendingCreateSetupsLoadedScope !== pendingGuidedSetupGatewayScope) return;
     persistPendingGuidedSetupsToStorage({
       storage: window.sessionStorage,
+      gatewayScope: pendingGuidedSetupGatewayScope,
       setupsByAgentId: pendingCreateSetupsByAgentId,
     });
-  }, [pendingCreateSetupsByAgentId, pendingCreateSetupsLoaded]);
+  }, [pendingCreateSetupsByAgentId, pendingCreateSetupsLoadedScope, pendingGuidedSetupGatewayScope]);
 
   useEffect(() => {
     if (status !== "connected") return;
     if (!agentsLoadedOnce) return;
-    if (!pendingCreateSetupsLoaded) return;
+    if (pendingCreateSetupsLoadedScope !== pendingGuidedSetupGatewayScope) return;
     if (retryPendingSetupBusyAgentId) return;
 
     const knownAgentIds = new Set(agents.map((agent) => agent.agentId));
@@ -857,7 +872,8 @@ const AgentStudioPage = () => {
     client,
     loadAgents,
     pendingCreateSetupsByAgentId,
-    pendingCreateSetupsLoaded,
+    pendingCreateSetupsLoadedScope,
+    pendingGuidedSetupGatewayScope,
     retryPendingSetupBusyAgentId,
     setError,
     status,
