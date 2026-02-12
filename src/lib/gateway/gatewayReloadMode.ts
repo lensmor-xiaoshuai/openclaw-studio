@@ -15,6 +15,40 @@ const shouldRetryConfigWrite = (err: unknown) => {
   return /re-run config\.get|config changed since last load/i.test(err.message);
 };
 
+const resolveReloadModeFromConfig = (config: unknown): string | null => {
+  if (!isRecord(config)) return null;
+  const gateway = isRecord(config.gateway) ? config.gateway : null;
+  const reload = gateway && isRecord(gateway.reload) ? gateway.reload : null;
+  if (!reload || typeof reload.mode !== "string") return null;
+  const mode = reload.mode.trim().toLowerCase();
+  return mode.length > 0 ? mode : null;
+};
+
+export const shouldAwaitDisconnectRestartForReloadMode = (mode: string | null): boolean =>
+  mode !== "hot" && mode !== "off";
+
+export async function shouldAwaitDisconnectRestartForRemoteMutation(params: {
+  client: GatewayClient;
+  cachedConfigSnapshot: { config?: unknown } | null;
+  logError?: (message: string, error: unknown) => void;
+}): Promise<boolean> {
+  const cachedMode = resolveReloadModeFromConfig(params.cachedConfigSnapshot?.config);
+  if (cachedMode) {
+    return shouldAwaitDisconnectRestartForReloadMode(cachedMode);
+  }
+  try {
+    const snapshot = await params.client.call<GatewayConfigSnapshot>("config.get", {});
+    const mode = resolveReloadModeFromConfig(snapshot.config);
+    return shouldAwaitDisconnectRestartForReloadMode(mode);
+  } catch (err) {
+    params.logError?.(
+      "Failed to determine gateway reload mode; defaulting to restart wait.",
+      err
+    );
+    return true;
+  }
+}
+
 export async function ensureGatewayReloadModeHotForLocalStudio(params: {
   client: GatewayClient;
   upstreamGatewayUrl: string;
@@ -71,4 +105,3 @@ export async function ensureGatewayReloadModeHotForLocalStudio(params: {
 
   await attemptWrite(0);
 }
-

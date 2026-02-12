@@ -100,6 +100,7 @@ import { sendChatMessageViaStudio } from "@/features/agents/operations/chatSendO
 import { hydrateAgentFleetFromGateway } from "@/features/agents/operations/agentFleetHydration";
 import { useConfigMutationQueue } from "@/features/agents/operations/useConfigMutationQueue";
 import { isLocalGatewayUrl } from "@/lib/gateway/local-gateway";
+import { shouldAwaitDisconnectRestartForRemoteMutation } from "@/lib/gateway/gatewayReloadMode";
 import { useGatewayRestartBlock } from "@/features/agents/operations/useGatewayRestartBlock";
 import { randomUUID } from "@/lib/uuid";
 import type { ExecApprovalDecision, PendingExecApproval } from "@/features/agents/approvals/types";
@@ -1320,6 +1321,17 @@ const AgentStudioPage = () => {
               setMobilePane("chat");
               return;
             }
+            const shouldAwaitRestart = await shouldAwaitDisconnectRestartForRemoteMutation({
+              client,
+              cachedConfigSnapshot: gatewayConfigSnapshot,
+              logError: (message, error) => console.error(message, error),
+            });
+            if (!shouldAwaitRestart) {
+              await loadAgents();
+              setDeleteAgentBlock(null);
+              setMobilePane("chat");
+              return;
+            }
             setDeleteAgentBlock((current) => {
               if (!current || current.agentId !== agentId) return current;
               return {
@@ -1342,6 +1354,7 @@ const AgentStudioPage = () => {
       createAgentBlock,
       deleteAgentBlock,
       enqueueConfigMutation,
+      gatewayConfigSnapshot,
       isLocalGateway,
       loadAgents,
       renameAgentBlock,
@@ -1598,16 +1611,60 @@ const AgentStudioPage = () => {
                 upsertPendingGuidedSetup(current, created.id, setup)
               );
             }
-            setCreateAgentBlock((current) => {
-              if (!current || current.agentName !== name) return current;
-              return {
-                ...current,
-                agentId: created.id,
-                phase: "awaiting-restart",
-                sawDisconnect: false,
-              };
+            const shouldAwaitRestart = await shouldAwaitDisconnectRestartForRemoteMutation({
+              client,
+              cachedConfigSnapshot: gatewayConfigSnapshot,
+              logError: (message, error) => console.error(message, error),
             });
+            if (shouldAwaitRestart) {
+              setCreateAgentBlock((current) => {
+                if (!current || current.agentName !== name) return current;
+                return {
+                  ...current,
+                  agentId: created.id,
+                  phase: "awaiting-restart",
+                  sawDisconnect: false,
+                };
+              });
+              setCreateAgentModalOpen(false);
+              return;
+            }
+            let remoteSetupError: string | null = null;
+            if (setup) {
+              setCreateAgentBlock((current) => {
+                if (!current || current.agentName !== name) return current;
+                return {
+                  ...current,
+                  agentId: created.id,
+                  phase: "applying-setup",
+                };
+              });
+              try {
+                await applyGuidedAgentSetup({
+                  client,
+                  agentId: created.id,
+                  setup,
+                });
+                setPendingCreateSetupsByAgentId((current) =>
+                  removePendingGuidedSetup(current, created.id)
+                );
+              } catch (err) {
+                remoteSetupError =
+                  err instanceof Error ? err.message : "Agent setup failed.";
+                setPendingCreateSetupsByAgentId((current) =>
+                  upsertPendingGuidedSetup(current, created.id, setup)
+                );
+              }
+            }
+            await loadAgents();
+            setCreateAgentBlock(null);
             setCreateAgentModalOpen(false);
+            setMobilePane("chat");
+            if (remoteSetupError) {
+              setError(
+                `Agent "${name}" was created, but guided setup is pending. Retry or discard setup from chat. ${remoteSetupError}`
+              );
+            }
           },
         });
       } catch (err) {
@@ -1628,6 +1685,7 @@ const AgentStudioPage = () => {
       enqueueConfigMutation,
       flushPendingDraft,
       focusedAgent,
+      gatewayConfigSnapshot,
       isLocalGateway,
       loadAgents,
       renameAgentBlock,
@@ -2094,6 +2152,17 @@ const AgentStudioPage = () => {
               setMobilePane("chat");
               return;
             }
+            const shouldAwaitRestart = await shouldAwaitDisconnectRestartForRemoteMutation({
+              client,
+              cachedConfigSnapshot: gatewayConfigSnapshot,
+              logError: (message, error) => console.error(message, error),
+            });
+            if (!shouldAwaitRestart) {
+              await loadAgents();
+              setRenameAgentBlock(null);
+              setMobilePane("chat");
+              return;
+            }
             setRenameAgentBlock((current) => {
               if (!current || current.agentId !== agentId) return current;
               return {
@@ -2119,6 +2188,7 @@ const AgentStudioPage = () => {
       deleteAgentBlock,
       dispatch,
       enqueueConfigMutation,
+      gatewayConfigSnapshot,
       isLocalGateway,
       loadAgents,
       renameAgentBlock,

@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { ensureGatewayReloadModeHotForLocalStudio } from "@/lib/gateway/gatewayReloadMode";
+import {
+  ensureGatewayReloadModeHotForLocalStudio,
+  shouldAwaitDisconnectRestartForRemoteMutation,
+} from "@/lib/gateway/gatewayReloadMode";
 import { GatewayResponseError, type GatewayClient } from "@/lib/gateway/GatewayClient";
 
 describe("ensureGatewayReloadModeHotForLocalStudio", () => {
@@ -91,3 +94,51 @@ describe("ensureGatewayReloadModeHotForLocalStudio", () => {
   });
 });
 
+describe("shouldAwaitDisconnectRestartForRemoteMutation", () => {
+  it("returns false for cached hot mode", async () => {
+    const client = { call: vi.fn() } as unknown as GatewayClient;
+    const shouldAwait = await shouldAwaitDisconnectRestartForRemoteMutation({
+      client,
+      cachedConfigSnapshot: { config: { gateway: { reload: { mode: "hot" } } } },
+    });
+    expect(shouldAwait).toBe(false);
+    expect((client.call as ReturnType<typeof vi.fn>).mock.calls.length).toBe(0);
+  });
+
+  it("returns false for cached off mode", async () => {
+    const client = { call: vi.fn() } as unknown as GatewayClient;
+    const shouldAwait = await shouldAwaitDisconnectRestartForRemoteMutation({
+      client,
+      cachedConfigSnapshot: { config: { gateway: { reload: { mode: "off" } } } },
+    });
+    expect(shouldAwait).toBe(false);
+    expect((client.call as ReturnType<typeof vi.fn>).mock.calls.length).toBe(0);
+  });
+
+  it("returns true when reload mode is unknown", async () => {
+    const client = { call: vi.fn() } as unknown as GatewayClient;
+    const shouldAwait = await shouldAwaitDisconnectRestartForRemoteMutation({
+      client,
+      cachedConfigSnapshot: { config: { gateway: { reload: { mode: "restart" } } } },
+    });
+    expect(shouldAwait).toBe(true);
+    expect((client.call as ReturnType<typeof vi.fn>).mock.calls.length).toBe(0);
+  });
+
+  it("loads config when cache is missing and returns false for hot mode", async () => {
+    const client = {
+      call: vi.fn(async (method: string) => {
+        if (method !== "config.get") {
+          throw new Error(`unexpected method: ${method}`);
+        }
+        return { config: { gateway: { reload: { mode: "hot" } } } };
+      }),
+    } as unknown as GatewayClient;
+    const shouldAwait = await shouldAwaitDisconnectRestartForRemoteMutation({
+      client,
+      cachedConfigSnapshot: null,
+    });
+    expect(shouldAwait).toBe(false);
+    expect((client.call as ReturnType<typeof vi.fn>).mock.calls).toEqual([["config.get", {}]]);
+  });
+});
