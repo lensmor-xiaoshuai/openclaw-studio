@@ -47,8 +47,8 @@ const writeStudioSettings = (gatewayUrl: string) => {
 describe("agent state route", () => {
   beforeEach(() => {
     process.env = { ...ORIGINAL_ENV };
-    delete process.env.OPENCLAW_TASK_CONTROL_PLANE_SSH_TARGET;
-    delete process.env.OPENCLAW_TASK_CONTROL_PLANE_SSH_USER;
+    delete process.env.OPENCLAW_GATEWAY_SSH_TARGET;
+    delete process.env.OPENCLAW_GATEWAY_SSH_USER;
     delete process.env.OPENCLAW_STATE_DIR;
     mockedSpawnSync.mockReset();
     mockedConsoleError.mockClear();
@@ -157,7 +157,7 @@ describe("agent state route", () => {
   });
 
   it("uses configured ssh target without studio settings", async () => {
-    process.env.OPENCLAW_TASK_CONTROL_PLANE_SSH_TARGET = "me@host.test";
+    process.env.OPENCLAW_GATEWAY_SSH_TARGET = "me@host.test";
 
     mockedSpawnSync.mockReturnValueOnce({
       status: 0,

@@ -1,8 +1,8 @@
 import { loadStudioSettings } from "@/lib/studio/settings-store";
 import * as childProcess from "node:child_process";
 
-const SSH_TARGET_ENV = "OPENCLAW_TASK_CONTROL_PLANE_SSH_TARGET";
-const SSH_USER_ENV = "OPENCLAW_TASK_CONTROL_PLANE_SSH_USER";
+const SSH_TARGET_ENV = "OPENCLAW_GATEWAY_SSH_TARGET";
+const SSH_USER_ENV = "OPENCLAW_GATEWAY_SSH_USER";
 
 export const resolveConfiguredSshTarget = (env: NodeJS.ProcessEnv = process.env): string | null => {
   const configuredTarget = env[SSH_TARGET_ENV]?.trim() ?? "";

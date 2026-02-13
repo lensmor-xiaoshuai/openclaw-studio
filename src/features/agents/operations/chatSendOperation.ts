@@ -1,5 +1,5 @@
 import { syncGatewaySessionSettings, type GatewayClient } from "@/lib/gateway/GatewayClient";
-import { buildAgentInstruction, formatMetaMarkdown } from "@/lib/text/message-extract";
+import { buildAgentInstruction } from "@/lib/text/message-extract";
 import type { AgentState } from "@/features/agents/state/store";
 import { randomUUID } from "@/lib/uuid";
 import type { TranscriptAppendMeta } from "@/features/agents/state/transcript";
@@ -82,19 +82,6 @@ export async function sendChatMessageViaStudio(params: {
     },
   });
   if (echoUserMessage) {
-    params.dispatch({
-      type: "appendOutput",
-      agentId,
-      line: formatMetaMarkdown({ role: "user", timestamp: userTimestamp }),
-      transcript: {
-        source: "local-send",
-        runId,
-        sessionKey: params.sessionKey,
-        timestampMs: userTimestamp,
-        role: "user",
-        kind: "meta",
-      },
-    });
     params.dispatch({
       type: "appendOutput",
       agentId,

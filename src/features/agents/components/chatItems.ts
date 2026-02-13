@@ -9,6 +9,7 @@ import {
 } from "@/lib/text/message-extract";
 
 type ItemMeta = {
+  role: "user" | "assistant";
   timestampMs: number;
   thinkingDurationMs?: number;
 };
@@ -43,6 +44,10 @@ export const normalizeAssistantDisplayText = (value: string): string => {
     lastWasBlank = false;
   }
   return normalized.join("\n").trim();
+};
+
+const normalizeUserDisplayText = (value: string): string => {
+  return value.replace(/\s+/g, " ").trim();
 };
 
 const normalizeThinkingDisplayText = (value: string): string => {
@@ -92,6 +97,7 @@ export const buildFinalAgentChatItems = ({
       const parsed = parseMetaMarkdown(line);
       if (parsed) {
         currentMeta = {
+          role: parsed.role,
           timestampMs: parsed.timestamp,
           ...(typeof parsed.thinkingDurationMs === "number" ? { thinkingDurationMs: parsed.thinkingDurationMs } : {}),
         };
@@ -118,11 +124,41 @@ export const buildFinalAgentChatItems = ({
     if (trimmed.startsWith(">")) {
       const text = trimmed.replace(/^>\s?/, "").trim();
       if (text) {
+        const normalized = normalizeUserDisplayText(text);
+        const currentTimestamp =
+          currentMeta?.role === "user" ? currentMeta.timestampMs : undefined;
+        const previous = items[items.length - 1];
+        if (previous?.kind === "user") {
+          const previousNormalized = normalizeUserDisplayText(previous.text);
+          const previousTimestamp = previous.timestampMs;
+          const shouldCollapse =
+            previousNormalized === normalized &&
+            ((typeof previousTimestamp === "number" &&
+              typeof currentTimestamp === "number" &&
+              previousTimestamp === currentTimestamp) ||
+              (previousTimestamp === undefined &&
+                typeof currentTimestamp === "number"));
+          if (
+            shouldCollapse
+          ) {
+            previous.text = normalized;
+            if (typeof currentTimestamp === "number") {
+              previous.timestampMs = currentTimestamp;
+            }
+            if (currentMeta?.role === "user") {
+              currentMeta = null;
+            }
+            continue;
+          }
+        }
         items.push({
           kind: "user",
-          text,
-          ...(currentMeta ? { timestampMs: currentMeta.timestampMs } : {}),
+          text: normalized,
+          ...(typeof currentTimestamp === "number" ? { timestampMs: currentTimestamp } : {}),
         });
+        if (currentMeta?.role === "user") {
+          currentMeta = null;
+        }
       }
       continue;
     }
@@ -183,6 +219,7 @@ export const buildAgentChatItems = ({
       const parsed = parseMetaMarkdown(line);
       if (parsed) {
         currentMeta = {
+          role: parsed.role,
           timestampMs: parsed.timestamp,
           ...(typeof parsed.thinkingDurationMs === "number" ? { thinkingDurationMs: parsed.thinkingDurationMs } : {}),
         };
@@ -209,11 +246,16 @@ export const buildAgentChatItems = ({
     if (trimmed.startsWith(">")) {
       const text = trimmed.replace(/^>\s?/, "").trim();
       if (text) {
+        const currentTimestamp =
+          currentMeta?.role === "user" ? currentMeta.timestampMs : undefined;
         items.push({
           kind: "user",
-          text,
-          ...(currentMeta ? { timestampMs: currentMeta.timestampMs } : {}),
+          text: normalizeUserDisplayText(text),
+          ...(typeof currentTimestamp === "number" ? { timestampMs: currentTimestamp } : {}),
         });
+        if (currentMeta?.role === "user") {
+          currentMeta = null;
+        }
       }
       continue;
     }

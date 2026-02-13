@@ -116,4 +116,48 @@ describe("buildFinalAgentChatItems", () => {
       thinkingDurationMs: 1800,
     });
   });
+
+  it("collapses adjacent duplicate user items when optimistic and persisted turns match", () => {
+    const items = buildFinalAgentChatItems({
+      outputLines: [
+        "> hello\n\nworld",
+        formatMetaMarkdown({ role: "user", timestamp: 1700000000000 }),
+        "> hello world",
+      ],
+      showThinkingTraces: true,
+      toolCallingEnabled: true,
+    });
+
+    expect(items).toEqual([
+      {
+        kind: "user",
+        text: "hello world",
+        timestampMs: 1700000000000,
+      },
+    ]);
+  });
+
+  it("does_not_collapse_repeated_user_message_when_second_turn_is_only_optimistic", () => {
+    const items = buildFinalAgentChatItems({
+      outputLines: [
+        formatMetaMarkdown({ role: "user", timestamp: 1700000000000 }),
+        "> repeat",
+        "> repeat",
+      ],
+      showThinkingTraces: true,
+      toolCallingEnabled: true,
+    });
+
+    expect(items).toEqual([
+      {
+        kind: "user",
+        text: "repeat",
+        timestampMs: 1700000000000,
+      },
+      {
+        kind: "user",
+        text: "repeat",
+      },
+    ]);
+  });
 });

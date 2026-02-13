@@ -266,4 +266,38 @@ describe("sendChatMessageViaStudio", () => {
       line: "Error: boom",
     });
   });
+
+  it("optimistically_appends_only_user_content_line", async () => {
+    const agent = createAgent({ sessionSettingsSynced: true });
+    const dispatch = vi.fn();
+    const call = vi.fn(async () => ({ ok: true }));
+
+    await sendChatMessageViaStudio({
+      client: { call },
+      dispatch,
+      getAgent: () => agent,
+      agentId: agent.agentId,
+      sessionKey: agent.sessionKey,
+      message: "Hello world",
+      now: () => 1234,
+      generateRunId: () => "run-1",
+    });
+
+    const appendLines = dispatch.mock.calls
+      .map((entry) => entry[0])
+      .filter((action): action is { type: "appendOutput"; line: string } => {
+        return Boolean(
+          action &&
+            typeof action === "object" &&
+            "type" in action &&
+            action.type === "appendOutput" &&
+            "line" in action &&
+            typeof action.line === "string"
+        );
+      })
+      .map((action) => action.line);
+
+    expect(appendLines).toContain("> Hello world");
+    expect(appendLines.some((line) => line.startsWith("[[meta]]"))).toBe(false);
+  });
 });

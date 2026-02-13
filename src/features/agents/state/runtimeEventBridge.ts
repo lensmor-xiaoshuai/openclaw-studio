@@ -287,6 +287,14 @@ export const mergeHistoryWithPending = (
   historyLines: string[],
   currentLines: string[]
 ): string[] => {
+  const normalizeUserLine = (line: string): string | null => {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith(">")) return null;
+    const text = trimmed.replace(/^>\s?/, "");
+    const normalized = text.replace(/\s+/g, " ").trim();
+    return normalized || null;
+  };
+
   if (currentLines.length === 0) return historyLines;
   if (historyLines.length === 0) return historyLines;
   const merged = [...historyLines];
@@ -302,6 +310,20 @@ export const mergeHistoryWithPending = (
     if (foundIndex !== -1) {
       cursor = foundIndex + 1;
       continue;
+    }
+    const normalizedUserLine = normalizeUserLine(line);
+    if (normalizedUserLine) {
+      for (let i = cursor; i < merged.length; i += 1) {
+        const normalizedMergedLine = normalizeUserLine(merged[i] ?? "");
+        if (!normalizedMergedLine) continue;
+        if (normalizedMergedLine !== normalizedUserLine) continue;
+        foundIndex = i;
+        break;
+      }
+      if (foundIndex !== -1) {
+        cursor = foundIndex + 1;
+        continue;
+      }
     }
     merged.splice(cursor, 0, line);
     cursor += 1;

@@ -387,4 +387,27 @@ describe("runtime event bridge helpers", () => {
       thinkingTrace: null,
     });
   });
+
+  it("prefers canonical history when optimistic user content differs only by whitespace", () => {
+    const patch = buildHistorySyncPatch({
+      messages: [
+        {
+          role: "user",
+          timestamp: "2024-01-01T00:00:03.000Z",
+          content: "line one line two",
+        },
+      ],
+      currentLines: ["> line one\n\nline two"],
+      loadedAt: 400,
+      status: "idle",
+      runId: null,
+    });
+
+    expect(patch).toEqual({
+      outputLines: ['[[meta]]{"role":"user","timestamp":1704067203000}', "> line one line two"],
+      lastResult: null,
+      lastUserMessage: "line one line two",
+      historyLoadedAt: 400,
+    });
+  });
 });
