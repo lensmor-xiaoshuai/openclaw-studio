@@ -305,7 +305,7 @@ export const formatThinkingMarkdown = (text: string): string => {
     .filter(Boolean)
     .map((line) => `_${line}_`);
   if (lines.length === 0) return "";
-  return `${TRACE_MARKDOWN_PREFIX}\n${lines.join("\n")}`;
+  return `${TRACE_MARKDOWN_PREFIX}\n${lines.join("\n\n")}`;
 };
 
 export const isTraceMarkdown = (line: string): boolean =>

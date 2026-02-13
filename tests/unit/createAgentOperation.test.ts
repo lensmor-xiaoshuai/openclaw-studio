@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { GatewayClient } from "@/lib/gateway/GatewayClient";
 import {
   compileGuidedAgentCreation,
@@ -46,6 +46,18 @@ const createSetupFromBundle = (bundle: AgentPresetBundle): AgentGuidedSetup => {
 };
 
 describe("createAgentOperation", () => {
+  beforeEach(() => {
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      text: vi.fn(async () => JSON.stringify({ keys: [] })),
+    }) as unknown as typeof fetch;
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it("applies guided setup for local gateway creation", async () => {
     const setup = createSetup();
     const client = {

@@ -96,7 +96,7 @@ describe("formatThinkingMarkdown", () => {
     const input = "Line 1\n\n  Line 2  ";
     const formatted = formatThinkingMarkdown(input);
     expect(isTraceMarkdown(formatted)).toBe(true);
-    expect(stripTraceMarkdown(formatted)).toBe("_Line 1_\n_Line 2_");
+    expect(stripTraceMarkdown(formatted)).toBe("_Line 1_\n\n_Line 2_");
   });
 });
 
