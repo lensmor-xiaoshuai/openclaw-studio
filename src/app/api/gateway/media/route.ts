@@ -190,13 +190,13 @@ export async function GET(request: Request) {
     );
 
     if (result.error) {
-      throw new Error(`Failed to execute ssh: ${result.error.message}`);
+      throw new Error(`Failed to execute ssh (${sshTarget}): ${result.error.message}`);
     }
 
     if (result.status !== 0) {
       const stdout = result.stdout?.trim() ?? "";
       const stderr = result.stderr?.trim() ?? "";
-      throw new Error(stderr || stdout || "Failed to fetch media over ssh");
+      throw new Error(stderr || stdout || `Failed to fetch media over ssh (${sshTarget})`);
     }
 
     const payload = JSON.parse((result.stdout ?? "").trim()) as {

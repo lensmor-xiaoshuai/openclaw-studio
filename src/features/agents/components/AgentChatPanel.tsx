@@ -355,7 +355,28 @@ const AssistantMessageCard = memo(function AssistantMessageCard({
 
             {contentText ? (
               streaming ? (
-                <div className="whitespace-pre-wrap break-words text-foreground">{contentText}</div>
+                (() => {
+                  if (!contentText.includes("MEDIA:")) {
+                    return (
+                      <div className="whitespace-pre-wrap break-words text-foreground">
+                        {contentText}
+                      </div>
+                    );
+                  }
+                  const rewritten = rewriteMediaLinesToMarkdown(contentText);
+                  if (!rewritten.includes("![](")) {
+                    return (
+                      <div className="whitespace-pre-wrap break-words text-foreground">
+                        {contentText}
+                      </div>
+                    );
+                  }
+                  return (
+                    <div className="agent-markdown text-foreground">
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>{rewritten}</ReactMarkdown>
+                    </div>
+                  );
+                })()
               ) : artifact ? (
                 <>
                   {!artifactOnly && intro ? (
