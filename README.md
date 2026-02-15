@@ -102,6 +102,10 @@ Paths and key settings:
 
 See `docs/ui-guide.md` for UI workflows (agent creation, cron jobs, exec approvals).
 
+## PI + chat streaming
+
+See `docs/pi-chat-streaming.md` for how Studio bridges browser WebSocket traffic to the upstream Gateway, how runtime streaming arrives (`chat`/`agent` events), and how the chat UI renders tool calls, thinking traces, and final transcript lines.
+
 ## Troubleshooting
 
 If the UI loads but “Connect” fails, it’s usually Studio->Gateway:
