@@ -60,6 +60,22 @@ Key outputs of compilation:
   - `ask`: `off | on-miss | always`
   - `allowlist`: patterns
 
+### Tool Profiles And Tool Groups (What Studio Is Actually Writing)
+
+Studio’s guided presets use the same tool profiles and tool groups that upstream OpenClaw expands:
+- Upstream groups + profiles: `openclaw/src/agents/tool-policy.ts`
+
+Common groups referenced by Studio:
+- `group:fs`: `read`, `write`, `edit`, `apply_patch`
+- `group:runtime`: `exec`, `process`
+- `group:web`: `web_search`, `web_fetch`
+- `group:sessions`: `sessions_*` tools
+- `group:memory`: memory tools
+
+What this means in practice:
+- If Studio denies `group:runtime`, upstream expands that into denying `exec` and `process`, so command execution becomes unavailable regardless of exec approvals policy.
+- If Studio denies `write/edit/apply_patch` directly (as it does in “propose-only”), upstream will enforce that at tool selection time even if the sandbox has a writable workspace directory.
+
 ### Studio Gotcha: `sandbox.mode` Is Currently Hardcoded
 
 In `compileGuidedAgentCreation`, Studio currently sets:
@@ -195,6 +211,21 @@ Result:
 
 This is intentional: the “filesystem tools” and “exec tool” have different access characteristics inside a sandbox.
 
+## Sandbox Tool Policy (Separate From Per-Agent Tool Overrides)
+
+OpenClaw has an additional sandbox-only tool allow/deny policy:
+- `tools.sandbox.tools.allow|deny` (global)
+- `agents.list[].tools.sandbox.tools.allow|deny` (per-agent override)
+
+Upstream resolution:
+- `openclaw/src/agents/sandbox/tool-policy.ts` (`resolveSandboxToolPolicyForAgent`)
+
+Important nuance:
+- If `tools.sandbox.tools.allow` is present and non-empty, it becomes an allowlist.
+- If it is set to an empty array, upstream will still auto-add `image` to the allowlist (unless explicitly denied), which turns “empty” into effectively “image-only”.
+
+This is why Studio treats some configs as “broken” and repairs them (see below).
+
 ## OpenClaw (Upstream): Tool Availability and `workspaceAccess=ro`
 
 PI tool construction:
@@ -219,6 +250,30 @@ So if “auto-edit” is intended to mean “agent can apply edits via tools to 
 - `sandbox.workspaceAccess = "rw"`
 
 If `workspaceAccess = "none"`, upstream may still allow sandboxed write/edit tools, but those edits apply to the sandbox workspace, not the agent workspace (and the agent workspace is not mounted).
+
+## Session-Level Exec Settings (Where `exec` Runs)
+
+Separately from per-agent config and exec approvals, OpenClaw supports per-session exec settings:
+- `execHost`: `sandbox | gateway | node`
+- `execSecurity`: `deny | allowlist | full`
+- `execAsk`: `off | on-miss | always`
+
+These are stored in the gateway session store and mutated with `sessions.patch`:
+- Upstream method: `openclaw/src/gateway/server-methods/sessions.ts` (`"sessions.patch"`)
+- Patch application: `openclaw/src/gateway/sessions-patch.ts`
+- Session entry shape includes `execHost|execSecurity|execAsk`: `openclaw/src/config/sessions/types.ts`
+
+Studio uses these fields to keep “what the UI expects” aligned with gateway runtime:
+- Hydration derives the expected values using the exec approvals policy plus sandbox mode:
+  - `src/features/agents/operations/agentFleetHydrationDerivation.ts`
+  - Special case: if `sandbox.mode === "all"` and there are exec overrides, Studio forces `execHost = "sandbox"` to avoid accidentally running on the host.
+- On first send (or when out of sync), Studio patches the session:
+  - `src/features/agents/operations/chatSendOperation.ts` calls `syncGatewaySessionSettings(...)`
+  - Transport: `src/lib/gateway/GatewayClient.ts` (`sessions.patch`)
+
+Net effect:
+- Exec approvals policy controls whether the user will be prompted to approve.
+- Session exec settings control where execution happens (sandbox vs host) and the default `security/ask` values for runs.
 
 ## OpenClaw (Upstream): Exec Approvals (Policy + Events)
 
@@ -265,3 +320,32 @@ Studio wiring for UX:
    - `workspaceAccess=rw` means “tools operate on the agent workspace”.
    - `workspaceAccess=ro|none` means “tools operate on a sandbox workspace”.
    - `/agent` mount exists only for `workspaceAccess=ro` and is accessible via sandbox exec, not via filesystem tools.
+
+## Studio Post-Create “Permissions” Flows (Not Just Creation)
+
+Studio can also change permissions after an agent exists.
+
+### Execution Role Updates (Conservative/Collaborative/Autonomous)
+
+Studio’s “execution role” update flow applies three coordinated changes:
+- Exec approvals policy (per-agent, persisted in exec approvals file)
+- Tool allow/deny for runtime tools (`group:runtime`) in agent config
+- Session exec settings (`execHost|execSecurity|execAsk`) via `sessions.patch`
+
+Code:
+- `src/features/agents/operations/executionRoleUpdateOperation.ts` (`updateExecutionRoleViaStudio`)
+
+Why it matters:
+- You can have exec approvals configured but still be unable to run commands if `group:runtime` is denied.
+- You can have permissive approvals but still be safe if `execHost` is forced to `sandbox` when sandboxing is enabled.
+
+### One-Shot Sandbox Tool Policy Repair
+
+On connect, Studio scans the gateway config for agents that are sandboxed (`sandbox.mode === "all"`) and have an explicitly empty sandbox allowlist (`tools.sandbox.tools.allow = []`), and repairs those entries by setting:
+- `agents.list[].tools.sandbox.tools.allow = ["*"]`
+
+Code:
+- Detection + repair enqueue: `src/app/page.tsx` (`repair-sandbox-tool-allowlist`)
+- Gateway write: `src/lib/gateway/agentConfig.ts` (`updateGatewayAgentOverrides`)
+
+This exists to prevent sandboxed sessions from effectively losing access to almost all sandbox tools due to an empty allowlist interacting with upstream sandbox tool-policy behavior.
