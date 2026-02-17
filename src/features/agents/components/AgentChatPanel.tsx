@@ -810,6 +810,10 @@ export const AgentChatPanel = ({
   const draftRef = useRef<HTMLTextAreaElement | null>(null);
   const scrollToBottomNextOutputRef = useRef(false);
   const plainDraftRef = useRef(agent.draft);
+  const draftIdentityRef = useRef<{ agentId: string; sessionKey: string }>({
+    agentId: agent.agentId,
+    sessionKey: agent.sessionKey,
+  });
   const pendingResizeFrameRef = useRef<number | null>(null);
 
   const resizeDraft = useCallback(() => {
@@ -825,11 +829,26 @@ export const AgentChatPanel = ({
   }, []);
 
   useEffect(() => {
+    const previousIdentity = draftIdentityRef.current;
+    const identityChanged =
+      previousIdentity.agentId !== agent.agentId ||
+      previousIdentity.sessionKey !== agent.sessionKey;
+    if (identityChanged) {
+      draftIdentityRef.current = {
+        agentId: agent.agentId,
+        sessionKey: agent.sessionKey,
+      };
+      plainDraftRef.current = agent.draft;
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setDraftValue(agent.draft);
+      return;
+    }
     if (agent.draft === plainDraftRef.current) return;
-    plainDraftRef.current = agent.draft;
+    if (agent.draft.length !== 0) return;
+    plainDraftRef.current = "";
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setDraftValue(agent.draft);
-  }, [agent.draft]);
+    setDraftValue("");
+  }, [agent.agentId, agent.draft, agent.sessionKey]);
 
   useEffect(() => {
     if (pendingResizeFrameRef.current !== null) {
@@ -852,10 +871,13 @@ export const AgentChatPanel = ({
       if (!canSend || agent.status === "running") return;
       const trimmed = message.trim();
       if (!trimmed) return;
+      plainDraftRef.current = "";
+      setDraftValue("");
+      onDraftChange("");
       scrollToBottomNextOutputRef.current = true;
       onSend(trimmed);
     },
-    [agent.status, canSend, onSend]
+    [agent.status, canSend, onDraftChange, onSend]
   );
 
   const statusColor =
@@ -953,6 +975,7 @@ export const AgentChatPanel = ({
 
   const handleComposerKeyDown = useCallback(
     (event: KeyboardEvent<HTMLTextAreaElement>) => {
+      if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
       if (event.key !== "Enter" || event.shiftKey) return;
       if (event.defaultPrevented) return;
       event.preventDefault();

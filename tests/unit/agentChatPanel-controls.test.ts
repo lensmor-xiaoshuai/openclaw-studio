@@ -313,4 +313,103 @@ describe("AgentChatPanel controls", () => {
     expect(details).toBeTruthy();
     expect(details).not.toHaveAttribute("open");
   });
+
+  it("does_not_overwrite_active_draft_with_stale_nonempty_agent_draft", () => {
+    const onDraftChange = vi.fn();
+    const onSend = vi.fn();
+    const { rerender } = render(
+      createElement(AgentChatPanel, {
+        agent: createAgent(),
+        isSelected: true,
+        canSend: true,
+        models,
+        stopBusy: false,
+        onLoadMoreHistory: vi.fn(),
+        onOpenSettings: vi.fn(),
+        onModelChange: vi.fn(),
+        onThinkingChange: vi.fn(),
+        onDraftChange,
+        onSend,
+        onStopRun: vi.fn(),
+        onAvatarShuffle: vi.fn(),
+      })
+    );
+
+    const textarea = screen.getByPlaceholderText("type a message") as HTMLTextAreaElement;
+    fireEvent.change(textarea, { target: { value: "hello world" } });
+    expect(textarea.value).toBe("hello world");
+
+    rerender(
+      createElement(AgentChatPanel, {
+        agent: { ...createAgent(), draft: "hello" },
+        isSelected: true,
+        canSend: true,
+        models,
+        stopBusy: false,
+        onLoadMoreHistory: vi.fn(),
+        onOpenSettings: vi.fn(),
+        onModelChange: vi.fn(),
+        onThinkingChange: vi.fn(),
+        onDraftChange,
+        onSend,
+        onStopRun: vi.fn(),
+        onAvatarShuffle: vi.fn(),
+      })
+    );
+    expect(textarea.value).toBe("hello world");
+
+    rerender(
+      createElement(AgentChatPanel, {
+        agent: { ...createAgent(), draft: "" },
+        isSelected: true,
+        canSend: true,
+        models,
+        stopBusy: false,
+        onLoadMoreHistory: vi.fn(),
+        onOpenSettings: vi.fn(),
+        onModelChange: vi.fn(),
+        onThinkingChange: vi.fn(),
+        onDraftChange,
+        onSend,
+        onStopRun: vi.fn(),
+        onAvatarShuffle: vi.fn(),
+      })
+    );
+    expect(textarea.value).toBe("");
+  });
+
+  it("does_not_send_when_enter_is_pressed_during_composition", () => {
+    const onSend = vi.fn();
+    render(
+      createElement(AgentChatPanel, {
+        agent: createAgent(),
+        isSelected: true,
+        canSend: true,
+        models,
+        stopBusy: false,
+        onLoadMoreHistory: vi.fn(),
+        onOpenSettings: vi.fn(),
+        onModelChange: vi.fn(),
+        onThinkingChange: vi.fn(),
+        onDraftChange: vi.fn(),
+        onSend,
+        onStopRun: vi.fn(),
+        onAvatarShuffle: vi.fn(),
+      })
+    );
+
+    const textarea = screen.getByPlaceholderText("type a message");
+    fireEvent.change(textarea, { target: { value: "draft text" } });
+
+    fireEvent.keyDown(textarea, {
+      key: "Enter",
+      code: "Enter",
+      keyCode: 229,
+      isComposing: true,
+    });
+    expect(onSend).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(textarea, { key: "Enter", code: "Enter" });
+    expect(onSend).toHaveBeenCalledWith("draft text");
+  });
 });
