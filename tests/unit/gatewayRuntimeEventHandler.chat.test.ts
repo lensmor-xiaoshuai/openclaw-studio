@@ -807,6 +807,62 @@ describe("gateway runtime event handler (chat)", () => {
     );
   });
 
+  it("suppresses aborted status line when abort is an approval pause", () => {
+    const agents = [createAgent({ status: "running", runId: "run-1", runStartedAt: 900 })];
+    const dispatch = vi.fn();
+    const shouldSuppressRunAbortedLine = vi.fn(({ runId, stopReason }) => {
+      return runId === "run-1" && stopReason === "rpc";
+    });
+    const handler = createGatewayRuntimeEventHandler({
+      getStatus: () => "connected",
+      getAgents: () => agents,
+      dispatch,
+      queueLivePatch: vi.fn(),
+      clearPendingLivePatch: vi.fn(),
+      now: () => 1000,
+      loadSummarySnapshot: vi.fn(async () => {}),
+      requestHistoryRefresh: vi.fn(async () => {}),
+      refreshHeartbeatLatestUpdate: vi.fn(),
+      bumpHeartbeatTick: vi.fn(),
+      setTimeout: (fn, ms) => setTimeout(fn, ms) as unknown as number,
+      clearTimeout: (id) => clearTimeout(id as unknown as NodeJS.Timeout),
+      isDisconnectLikeError: () => false,
+      logWarn: vi.fn(),
+      shouldSuppressRunAbortedLine,
+      updateSpecialLatestUpdate: vi.fn(),
+    });
+
+    handler.handleEvent({
+      type: "event",
+      event: "chat",
+      payload: {
+        runId: "run-1",
+        sessionKey: agents[0]!.sessionKey,
+        state: "aborted",
+        stopReason: "rpc",
+        message: { role: "assistant", content: "" },
+      },
+    });
+
+    expect(shouldSuppressRunAbortedLine).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agentId: "agent-1",
+        runId: "run-1",
+        stopReason: "rpc",
+      })
+    );
+    expect(dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: "appendOutput", agentId: "agent-1", line: "Run aborted." })
+    );
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "updateAgent",
+        agentId: "agent-1",
+        patch: expect.objectContaining({ status: "idle" }),
+      })
+    );
+  });
+
   it("ignores late delta chat events after a run has already finalized", () => {
     const agents = [createAgent({ status: "running", runId: "run-1", runStartedAt: 900 })];
     const queueLivePatch = vi.fn();

@@ -63,6 +63,12 @@ export type GatewayRuntimeEventHandlerDeps = {
 
   isDisconnectLikeError: (err: unknown) => boolean;
   logWarn?: (message: string, meta?: unknown) => void;
+  shouldSuppressRunAbortedLine?: (params: {
+    agentId: string;
+    runId: string | null;
+    sessionKey: string;
+    stopReason: string | null;
+  }) => boolean;
 
   updateSpecialLatestUpdate: (agentId: string, agent: AgentState, message: string) => void;
 };
@@ -800,14 +806,23 @@ export function createGatewayRuntimeEventHandler(
     }
 
     if (payload.state === "aborted") {
-      dispatchOutput(agentId, "Run aborted.", {
-        source: "runtime-chat",
-        runId: payload.runId ?? null,
-        sessionKey: payload.sessionKey,
-        timestampMs: now(),
-        role: "assistant",
-        kind: "assistant",
-      });
+      const suppressAbortedLine =
+        deps.shouldSuppressRunAbortedLine?.({
+          agentId,
+          runId: payload.runId ?? null,
+          sessionKey: payload.sessionKey,
+          stopReason: payload.stopReason?.trim() ?? null,
+        }) ?? false;
+      if (!suppressAbortedLine) {
+        dispatchOutput(agentId, "Run aborted.", {
+          source: "runtime-chat",
+          runId: payload.runId ?? null,
+          sessionKey: payload.sessionKey,
+          timestampMs: now(),
+          role: "assistant",
+          kind: "assistant",
+        });
+      }
       applyRuntimePolicyIntents(chatIntents, { agentForLatestUpdate: agent });
       return;
     }

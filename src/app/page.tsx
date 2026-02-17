@@ -1883,6 +1883,37 @@ const AgentStudioPage = () => {
         setPendingExecApprovalsByAgentId,
         setUnscopedPendingExecApprovals,
         requestHistoryRefresh: (agentId) => loadAgentHistory(agentId),
+        onAllowResolved: ({ approval, targetAgentId }) => {
+          const scopedPending = (pendingExecApprovalsByAgentId[targetAgentId] ?? []).some(
+            (pendingApproval) => pendingApproval.id !== approval.id
+          );
+          const targetSessionKey = approval.sessionKey?.trim() ?? "";
+          const unscopedPending = unscopedPendingExecApprovals.some((pendingApproval) => {
+            if (pendingApproval.id === approval.id) return false;
+            const pendingAgentId = pendingApproval.agentId?.trim() ?? "";
+            if (pendingAgentId && pendingAgentId === targetAgentId) return true;
+            if (!targetSessionKey) return false;
+            return (pendingApproval.sessionKey?.trim() ?? "") === targetSessionKey;
+          });
+          if (scopedPending || unscopedPending) return;
+          const latest =
+            stateRef.current.agents.find((entry) => entry.agentId === targetAgentId) ?? null;
+          if (!latest) return;
+          const pausedRunId =
+            approvalPausedRunIdByAgentRef.current.get(targetAgentId)?.trim() ?? "";
+          const nowMs = Date.now();
+          dispatch({
+            type: "updateAgent",
+            agentId: targetAgentId,
+            patch: {
+              status: "running",
+              sessionCreated: true,
+              lastActivityAt: nowMs,
+              ...(pausedRunId ? { runId: pausedRunId } : {}),
+              ...(latest.runStartedAt === null ? { runStartedAt: nowMs } : {}),
+            },
+          });
+        },
         onAllowed: async ({ approval, targetAgentId }) => {
           const pausedByAgent = approvalPausedRunIdByAgentRef.current;
           const pausedRunId = pausedByAgent.get(targetAgentId) ?? null;
@@ -2093,6 +2124,13 @@ const AgentStudioPage = () => {
       clearTimeout: (id) => window.clearTimeout(id),
       isDisconnectLikeError: isGatewayDisconnectLikeError,
       logWarn: (message, meta) => console.warn(message, meta),
+      shouldSuppressRunAbortedLine: ({ agentId, runId, stopReason }) => {
+        if (stopReason !== "rpc") return false;
+        const normalizedRunId = runId?.trim() ?? "";
+        if (!normalizedRunId) return false;
+        const pausedRunId = approvalPausedRunIdByAgentRef.current.get(agentId)?.trim() ?? "";
+        return pausedRunId.length > 0 && pausedRunId === normalizedRunId;
+      },
       updateSpecialLatestUpdate: (agentId, agent, message) => {
         void specialLatestUpdate.update(agentId, agent, message);
       },

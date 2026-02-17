@@ -209,7 +209,7 @@ describe("AgentChatPanel controls", () => {
     expect(stopButton.parentElement).toHaveAttribute("title", stopDisabledReason);
   });
 
-  it("shows_typing_indicator_while_running_before_stream_text", () => {
+  it("shows_thinking_indicator_while_running_before_stream_text", () => {
     render(
       createElement(AgentChatPanel, {
         agent: { ...createAgent(), status: "running", outputLines: ["> test"] },
@@ -229,10 +229,10 @@ describe("AgentChatPanel controls", () => {
     );
 
     expect(screen.getByTestId("agent-typing-indicator")).toBeInTheDocument();
-    expect(within(screen.getByTestId("agent-typing-indicator")).getByText("Typing")).toBeInTheDocument();
+    expect(within(screen.getByTestId("agent-typing-indicator")).getByText("Thinking")).toBeInTheDocument();
   });
 
-  it("hides_typing_indicator_after_stream_starts", () => {
+  it("shows_thinking_indicator_after_stream_starts", () => {
     render(
       createElement(AgentChatPanel, {
         agent: {
@@ -257,10 +257,10 @@ describe("AgentChatPanel controls", () => {
     );
 
     expect(screen.getByTestId("agent-typing-indicator")).toBeInTheDocument();
-    expect(within(screen.getByTestId("agent-typing-indicator")).getByText("Streaming")).toBeInTheDocument();
+    expect(within(screen.getByTestId("agent-typing-indicator")).getByText("Thinking")).toBeInTheDocument();
   });
 
-  it("hides_typing_indicator_when_thinking_trace_has_started", () => {
+  it("keeps_thinking_animation_visible_when_saved_thinking_exists", () => {
     render(
       createElement(AgentChatPanel, {
         agent: {
@@ -283,7 +283,7 @@ describe("AgentChatPanel controls", () => {
       })
     );
 
-    expect(screen.getByTestId("agent-typing-indicator")).toBeInTheDocument();
+    expect(screen.getAllByTestId("agent-typing-indicator").length).toBeGreaterThan(0);
   });
 
   it("renders thinking row collapsed by default", () => {

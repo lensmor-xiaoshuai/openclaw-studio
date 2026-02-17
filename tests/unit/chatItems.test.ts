@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { buildAgentChatItems, buildFinalAgentChatItems, summarizeToolLabel } from "@/features/agents/components/chatItems";
+import {
+  buildAgentChatItems,
+  buildAgentChatRenderBlocks,
+  buildFinalAgentChatItems,
+  summarizeToolLabel,
+} from "@/features/agents/components/chatItems";
 import { formatMetaMarkdown, formatThinkingMarkdown, formatToolCallMarkdown, formatToolResultMarkdown } from "@/lib/text/message-extract";
 
 describe("buildAgentChatItems", () => {
@@ -246,5 +251,88 @@ describe("summarizeToolLabel", () => {
     expect(resultSummary).toContain("completed");
     expect(resultSummary).toContain("exit 0");
     expect(resultSummary).not.toContain("call_");
+  });
+
+  it("renders read file calls as inline path labels without JSON body", () => {
+    const toolCallLine = formatToolCallMarkdown({
+      id: "call_read_1",
+      name: "read",
+      arguments: { file_path: "/Users/georgepickett/openclaw/shared/openclaw-agent-home/README.md" },
+    });
+
+    const summary = summarizeToolLabel(toolCallLine);
+    expect(summary.summaryText).toBe(
+      "read /Users/georgepickett/openclaw/shared/openclaw-agent-home/README.md"
+    );
+    expect(summary.inlineOnly).toBe(true);
+    expect(summary.body).toBe("");
+  });
+});
+
+describe("buildAgentChatRenderBlocks", () => {
+  it("groups thinking and tool events into one assistant block in original order", () => {
+    const toolCallLine = formatToolCallMarkdown({
+      id: "call_1",
+      name: "exec",
+      arguments: { command: "pwd" },
+    });
+    const toolResultLine = formatToolResultMarkdown({
+      toolCallId: "call_1",
+      toolName: "exec",
+      details: { status: "completed", exitCode: 0 },
+      text: "/repo",
+      isError: false,
+    });
+
+    const blocks = buildAgentChatRenderBlocks([
+      { kind: "thinking", text: "_plan before tool_", timestampMs: 100 },
+      { kind: "tool", text: toolCallLine, timestampMs: 101 },
+      { kind: "thinking", text: "_plan after tool_", timestampMs: 102 },
+      { kind: "tool", text: toolResultLine, timestampMs: 103 },
+      { kind: "assistant", text: "done", timestampMs: 104 },
+    ]);
+
+    expect(blocks).toEqual([
+      {
+        kind: "assistant",
+        text: "done",
+        timestampMs: 100,
+        traceEvents: [
+          { kind: "thinking", text: "_plan before tool_" },
+          { kind: "tool", text: toolCallLine },
+          { kind: "thinking", text: "_plan after tool_" },
+          { kind: "tool", text: toolResultLine },
+        ],
+      },
+    ]);
+  });
+
+  it("starts a new assistant block after a user turn", () => {
+    const blocks = buildAgentChatRenderBlocks([
+      { kind: "thinking", text: "_first plan_", timestampMs: 10 },
+      { kind: "assistant", text: "first answer", timestampMs: 11 },
+      { kind: "user", text: "next question", timestampMs: 12 },
+      { kind: "thinking", text: "_second plan_", timestampMs: 13 },
+      { kind: "assistant", text: "second answer", timestampMs: 14 },
+    ]);
+
+    expect(blocks.map((block) => block.kind)).toEqual(["assistant", "user", "assistant"]);
+  });
+
+  it("merges adjacent incremental thinking updates", () => {
+    const blocks = buildAgentChatRenderBlocks([
+      { kind: "thinking", text: "_a_", timestampMs: 10 },
+      { kind: "thinking", text: "_a_\n\n_b_", timestampMs: 10 },
+      { kind: "assistant", text: "answer", timestampMs: 10 },
+    ]);
+
+    expect(blocks).toEqual([
+      {
+        kind: "assistant",
+        text: "answer",
+        timestampMs: 10,
+        traceEvents: [{ kind: "thinking", text: "_a_\n\n_b_" }],
+      },
+    ]);
   });
 });

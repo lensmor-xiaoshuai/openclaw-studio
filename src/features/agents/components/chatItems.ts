@@ -21,6 +21,20 @@ export type AgentChatItem =
   | { kind: "tool"; text: string; timestampMs?: number }
   | { kind: "thinking"; text: string; live?: boolean; timestampMs?: number; thinkingDurationMs?: number };
 
+export type AssistantTraceEvent =
+  | { kind: "thinking"; text: string }
+  | { kind: "tool"; text: string };
+
+export type AgentChatRenderBlock =
+  | { kind: "user"; text: string; timestampMs?: number }
+  | {
+      kind: "assistant";
+      text: string | null;
+      timestampMs?: number;
+      thinkingDurationMs?: number;
+      traceEvents: AssistantTraceEvent[];
+    };
+
 export type BuildAgentChatItemsInput = {
   outputLines: string[];
   streamText: string | null;
@@ -269,6 +283,128 @@ export const buildAgentChatItems = ({
   return items;
 };
 
+const mergeIncrementalText = (existing: string, next: string): string => {
+  if (existing === next) return existing;
+  if (next.startsWith(existing)) return next;
+  if (existing.startsWith(next)) return existing;
+  return `${existing}\n\n${next}`;
+};
+
+const appendThinkingTraceEvent = (events: AssistantTraceEvent[], text: string) => {
+  const normalized = text.trim();
+  if (!normalized) return;
+  const previous = events[events.length - 1];
+  if (!previous || previous.kind !== "thinking") {
+    events.push({ kind: "thinking", text: normalized });
+    return;
+  }
+  previous.text = mergeIncrementalText(previous.text, normalized);
+};
+
+const hasMismatchedTimestamps = (
+  left?: number,
+  right?: number
+): boolean => {
+  if (typeof left !== "number" || typeof right !== "number") return false;
+  return left !== right;
+};
+
+export const buildAgentChatRenderBlocks = (
+  chatItems: AgentChatItem[]
+): AgentChatRenderBlock[] => {
+  const blocks: AgentChatRenderBlock[] = [];
+  let currentAssistant: Extract<AgentChatRenderBlock, { kind: "assistant" }> | null = null;
+
+  const flushAssistant = () => {
+    if (!currentAssistant) return;
+    if (currentAssistant.text || currentAssistant.traceEvents.length > 0) {
+      blocks.push(currentAssistant);
+    }
+    currentAssistant = null;
+  };
+
+  const ensureAssistant = (meta?: {
+    timestampMs?: number;
+    thinkingDurationMs?: number;
+  }) => {
+    if (!currentAssistant) {
+      currentAssistant = {
+        kind: "assistant",
+        text: null,
+        traceEvents: [],
+        ...(typeof meta?.timestampMs === "number" ? { timestampMs: meta.timestampMs } : {}),
+        ...(typeof meta?.thinkingDurationMs === "number"
+          ? { thinkingDurationMs: meta.thinkingDurationMs }
+          : {}),
+      };
+      return currentAssistant;
+    }
+    if (
+      currentAssistant.text &&
+      hasMismatchedTimestamps(currentAssistant.timestampMs, meta?.timestampMs)
+    ) {
+      flushAssistant();
+      currentAssistant = {
+        kind: "assistant",
+        text: null,
+        traceEvents: [],
+        ...(typeof meta?.timestampMs === "number" ? { timestampMs: meta.timestampMs } : {}),
+        ...(typeof meta?.thinkingDurationMs === "number"
+          ? { thinkingDurationMs: meta.thinkingDurationMs }
+          : {}),
+      };
+      return currentAssistant;
+    }
+    if (
+      typeof currentAssistant.timestampMs !== "number" &&
+      typeof meta?.timestampMs === "number"
+    ) {
+      currentAssistant.timestampMs = meta.timestampMs;
+    }
+    if (typeof meta?.thinkingDurationMs === "number") {
+      currentAssistant.thinkingDurationMs = meta.thinkingDurationMs;
+    }
+    return currentAssistant;
+  };
+
+  for (const item of chatItems) {
+    if (item.kind === "user") {
+      flushAssistant();
+      blocks.push({ kind: "user", text: item.text, timestampMs: item.timestampMs });
+      continue;
+    }
+
+    if (item.kind === "thinking") {
+      const assistant = ensureAssistant({
+        timestampMs: item.timestampMs,
+        thinkingDurationMs: item.thinkingDurationMs,
+      });
+      appendThinkingTraceEvent(assistant.traceEvents, item.text);
+      continue;
+    }
+
+    if (item.kind === "tool") {
+      const assistant = ensureAssistant({ timestampMs: item.timestampMs });
+      assistant.traceEvents.push({ kind: "tool", text: item.text });
+      continue;
+    }
+
+    const assistant = ensureAssistant({
+      timestampMs: item.timestampMs,
+      thinkingDurationMs: item.thinkingDurationMs,
+    });
+    const normalized = item.text.trim();
+    if (!normalized) continue;
+    assistant.text =
+      typeof assistant.text === "string"
+        ? mergeIncrementalText(assistant.text, normalized)
+        : normalized;
+  }
+
+  flushAssistant();
+  return blocks;
+};
+
 const stripTrailingToolCallId = (
   label: string
 ): { toolLabel: string; toolCallId: string | null } => {
@@ -312,6 +448,8 @@ const extractFirstCodeBlockLine = (body: string): string | null => {
 const extractToolArgSummary = (body: string): string | null => {
   const matchers: Array<[RegExp, (m: RegExpMatchArray) => string | null]> = [
     [/"command"\s*:\s*"([^"]+)"/, (m) => (m[1] ? m[1] : null)],
+    [/"file_path"\s*:\s*"([^"]+)"/, (m) => (m[1] ? m[1] : null)],
+    [/"filePath"\s*:\s*"([^"]+)"/, (m) => (m[1] ? m[1] : null)],
     [/"path"\s*:\s*"([^"]+)"/, (m) => (m[1] ? m[1] : null)],
     [/"url"\s*:\s*"([^"]+)"/, (m) => (m[1] ? m[1] : null)],
   ];
@@ -323,12 +461,22 @@ const extractToolArgSummary = (body: string): string | null => {
   return null;
 };
 
-export const summarizeToolLabel = (line: string): { summaryText: string; body: string } => {
+export const summarizeToolLabel = (
+  line: string
+): { summaryText: string; body: string; inlineOnly?: boolean } => {
   const parsed = parseToolMarkdown(line);
   const { toolLabel } = stripTrailingToolCallId(parsed.label);
   const toolName = toDisplayToolName(toolLabel).toUpperCase();
   const metaLine = parsed.kind === "result" ? extractToolMetaLine(parsed.body) : null;
   const argSummary = parsed.kind === "call" ? extractToolArgSummary(parsed.body) : null;
+  const toolIsRead = toolName === "READ";
+  if (toolIsRead && parsed.kind === "call" && argSummary) {
+    return {
+      summaryText: `read ${argSummary}`,
+      body: "",
+      inlineOnly: true,
+    };
+  }
   const suffix = metaLine ?? argSummary;
   const toolIsExec = toolName === "EXEC";
   const execSummary =

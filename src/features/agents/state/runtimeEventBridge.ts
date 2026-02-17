@@ -68,6 +68,7 @@ export type ChatEventPayload = {
   sessionKey: string;
   state: "delta" | "final" | "aborted" | "error";
   seq?: number;
+  stopReason?: string;
   message?: unknown;
   errorMessage?: string;
 };

@@ -58,6 +58,7 @@ describe("execApprovalResolveOperation", () => {
     });
     const unscopedApprovals = createState<PendingExecApproval[]>([]);
     const requestHistoryRefresh = vi.fn();
+    const onAllowResolved = vi.fn();
     const onAllowed = vi.fn();
 
     await resolveExecApprovalViaStudio({
@@ -73,6 +74,7 @@ describe("execApprovalResolveOperation", () => {
       setPendingExecApprovalsByAgentId: approvalsByAgentId.set,
       setUnscopedPendingExecApprovals: unscopedApprovals.set,
       requestHistoryRefresh,
+      onAllowResolved,
       onAllowed,
       isDisconnectLikeError: () => false,
     });
@@ -82,8 +84,12 @@ describe("execApprovalResolveOperation", () => {
 
     expect(approvalsByAgentId.get()).toEqual({});
     expect(unscopedApprovals.get()).toEqual([]);
+    expect(onAllowResolved).toHaveBeenCalledWith({ approval, targetAgentId: "a1" });
     expect(requestHistoryRefresh).toHaveBeenCalledWith("a1");
     expect(onAllowed).toHaveBeenCalledWith({ approval, targetAgentId: "a1" });
+    expect(onAllowResolved.mock.invocationCallOrder[0]).toBeLessThan(
+      requestHistoryRefresh.mock.invocationCallOrder[0]
+    );
   });
 
   it("treats unknown approval id as already removed", async () => {

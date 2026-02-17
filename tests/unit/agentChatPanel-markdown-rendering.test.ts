@@ -138,4 +138,37 @@ describe("AgentChatPanel markdown rendering", () => {
       expect(thinkingDetails).toContainElement(summary);
     }
   });
+
+  it("renders read tool calls as inline path labels instead of collapsible JSON blocks", () => {
+    const readToolCall = formatToolCallMarkdown({
+      id: "call_read_1",
+      name: "read",
+      arguments: { file_path: "/tmp/README.md" },
+    });
+
+    render(
+      createElement(AgentChatPanel, {
+        agent: {
+          ...createAgent(),
+          outputLines: [formatThinkingMarkdown("Reviewing docs"), readToolCall],
+        },
+        isSelected: true,
+        canSend: true,
+        models,
+        stopBusy: false,
+        onLoadMoreHistory: vi.fn(),
+        onOpenSettings: vi.fn(),
+        onModelChange: vi.fn(),
+        onThinkingChange: vi.fn(),
+        onDraftChange: vi.fn(),
+        onSend: vi.fn(),
+        onStopRun: vi.fn(),
+        onAvatarShuffle: vi.fn(),
+      })
+    );
+
+    expect(screen.getByText("read /tmp/README.md")).toBeInTheDocument();
+    expect(screen.queryByText("read /tmp/README.md", { selector: "summary" })).toBeNull();
+    expect(screen.queryByText(/"file_path"/)).toBeNull();
+  });
 });

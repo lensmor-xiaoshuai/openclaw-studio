@@ -25,6 +25,10 @@ export const resolveExecApprovalViaStudio = async (params: {
   setPendingExecApprovalsByAgentId: SetState<Record<string, PendingExecApproval[]>>;
   setUnscopedPendingExecApprovals: SetState<PendingExecApproval[]>;
   requestHistoryRefresh: (agentId: string) => Promise<void> | void;
+  onAllowResolved?: (params: {
+    approval: PendingExecApproval;
+    targetAgentId: string;
+  }) => Promise<void> | void;
   onAllowed?: (params: { approval: PendingExecApproval; targetAgentId: string }) => Promise<void> | void;
   isDisconnectLikeError: (error: unknown) => boolean;
   shouldTreatUnknownId?: (error: unknown) => boolean;
@@ -120,6 +124,7 @@ export const resolveExecApprovalViaStudio = async (params: {
     if (!approval) return;
     const targetAgentId = resolveApprovalTargetAgentId(approval);
     if (!targetAgentId) return;
+    await params.onAllowResolved?.({ approval, targetAgentId });
 
     const latest = params.getLatestAgent(targetAgentId);
     const activeRunId = latest?.runId?.trim() ?? "";
