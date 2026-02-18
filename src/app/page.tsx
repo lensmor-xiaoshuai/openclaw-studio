@@ -69,22 +69,6 @@ import { resolveFocusedPreference } from "@/lib/studio/settings";
 import { applySessionSettingMutation } from "@/features/agents/state/sessionSettingsMutations";
 import type { AgentCreateModalSubmitPayload } from "@/features/agents/creation/types";
 import {
-  applyPendingGuidedSetupForAgent,
-  removePendingGuidedSetup,
-  upsertPendingGuidedSetup,
-} from "@/features/agents/creation/recovery";
-import {
-  normalizePendingGuidedSetupGatewayScope,
-} from "@/features/agents/creation/pendingSetupStore";
-import {
-  loadPendingGuidedSetupsForScope,
-  persistPendingGuidedSetupsForScopeWhenLoaded,
-} from "@/features/agents/creation/pendingGuidedSetupSessionStorageLifecycle";
-import {
-  applyGuidedAgentSetup,
-  type AgentGuidedSetup,
-} from "@/features/agents/operations/createAgentOperation";
-import {
   isGatewayDisconnectLikeError,
   type EventFrame,
 } from "@/lib/gateway/GatewayClient";
@@ -142,12 +126,10 @@ import {
   buildQueuedMutationBlock,
   resolveMutationStartGuard,
 } from "@/features/agents/operations/agentMutationLifecycleController";
-import { runPendingGuidedSetupAutoRetryViaStudio } from "@/features/agents/operations/pendingGuidedSetupAutoRetryOperation";
 import { runAgentConfigMutationLifecycle } from "@/features/agents/operations/agentConfigMutationLifecycleOperation";
 import {
   isCreateBlockTimedOut,
   runCreateAgentMutationLifecycle,
-  runPendingCreateSetupRetryLifecycle,
 } from "@/features/agents/operations/createAgentMutationLifecycleOperation";
 
 const DEFAULT_CHAT_HISTORY_LIMIT = 200;
@@ -163,9 +145,8 @@ type DeleteAgentBlockState = {
   startedAt: number;
   sawDisconnect: boolean;
 };
-type CreateAgentBlockPhase = "queued" | "creating" | "applying-setup";
+type CreateAgentBlockPhase = "queued" | "creating";
 type CreateAgentBlockState = {
-  agentId: string | null;
   agentName: string;
   phase: CreateAgentBlockPhase;
   startedAt: number;
@@ -259,19 +240,9 @@ const AgentStudioPage = () => {
   const [unscopedPendingExecApprovals, setUnscopedPendingExecApprovals] = useState<
     PendingExecApproval[]
   >([]);
-  const [pendingCreateSetupsByAgentId, setPendingCreateSetupsByAgentId] = useState<
-    Record<string, AgentGuidedSetup>
-  >({});
-  const [pendingCreateSetupsLoadedScope, setPendingCreateSetupsLoadedScope] = useState<
-    string | null
-  >(null);
-  const [retryPendingSetupBusyAgentId, setRetryPendingSetupBusyAgentId] = useState<string | null>(
-    null
-  );
   const specialUpdateRef = useRef<Map<string, string>>(new Map());
   const seenCronEventIdsRef = useRef<Set<string>>(new Set());
   const preferredSelectedAgentIdRef = useRef<string | null>(null);
-  const pendingCreateSetupsByAgentIdRef = useRef<Record<string, AgentGuidedSetup>>({});
   const pendingDraftValuesRef = useRef<Map<string, string>>(new Map());
   const pendingDraftTimersRef = useRef<Map<string, number>>(new Map());
   const pendingLivePatchesRef = useRef<Map<string, Partial<AgentState>>>(new Map());
@@ -281,8 +252,6 @@ const AgentStudioPage = () => {
     null
   );
   const reconcileRunInFlightRef = useRef<Set<string>>(new Set());
-  const pendingSetupAutoRetryAttemptedRef = useRef<Set<string>>(new Set());
-  const pendingSetupAutoRetryInFlightRef = useRef<Set<string>>(new Set());
   const approvalPausedRunIdByAgentRef = useRef<Map<string, string>>(new Map());
 
   const agents = state.agents;
@@ -329,12 +298,6 @@ const AgentStudioPage = () => {
       return "New Agent";
     }
   }, [state.agents]);
-  const focusedPendingCreateSetup = useMemo(() => {
-    if (!focusedAgentId) return null;
-    return pendingCreateSetupsByAgentId[focusedAgentId] ?? null;
-  }, [focusedAgentId, pendingCreateSetupsByAgentId]);
-  const focusedPendingCreateSetupBusy =
-    focusedAgent !== null && retryPendingSetupBusyAgentId === focusedAgent.agentId;
   const faviconSeed = useMemo(() => {
     const firstAgent = agents[0];
     const seed = firstAgent?.avatarSeed ?? firstAgent?.agentId ?? "";
@@ -351,10 +314,6 @@ const AgentStudioPage = () => {
   );
   const hasRunningAgents = runningAgentCount > 0;
   const isLocalGateway = useMemo(() => isLocalGatewayUrl(gatewayUrl), [gatewayUrl]);
-  const pendingGuidedSetupGatewayScope = useMemo(
-    () => normalizePendingGuidedSetupGatewayScope(gatewayUrl),
-    [gatewayUrl]
-  );
 
   const hasRestartBlockInProgress = Boolean(
     (deleteAgentBlock && deleteAgentBlock.phase !== "queued") ||
@@ -690,48 +649,9 @@ const AgentStudioPage = () => {
     });
   }, [client, enqueueConfigMutation, gatewayConfigSnapshot, loadAgents, status]);
 
-  const applyPendingCreateSetupForAgentId = useCallback(
-    async (params: { agentId: string; source: "auto" | "manual" }) => {
-      return await runPendingCreateSetupRetryLifecycle({
-        agentId: params.agentId,
-        source: params.source,
-        retryBusyAgentId: retryPendingSetupBusyAgentId,
-        inFlightAgentIds: pendingSetupAutoRetryInFlightRef.current,
-        pendingSetupsByAgentId: pendingCreateSetupsByAgentIdRef.current,
-        setRetryBusyAgentId: setRetryPendingSetupBusyAgentId,
-        applyPendingSetup: async (targetAgentId) =>
-          applyPendingGuidedSetupForAgent({
-            client,
-            agentId: targetAgentId,
-            pendingSetupsByAgentId: pendingCreateSetupsByAgentIdRef.current,
-          }),
-        removePending: (targetAgentId) => {
-          setPendingCreateSetupsByAgentId((current) =>
-            removePendingGuidedSetup(current, targetAgentId)
-          );
-        },
-        isDisconnectLikeError: isGatewayDisconnectLikeError,
-        resolveAgentName: (agentId) =>
-          stateRef.current.agents.find((agent) => agent.agentId === agentId)?.name ??
-          agentId,
-        onApplied: async () => {
-          await loadAgents();
-        },
-        onError: (message) => {
-          setError(message);
-        },
-      });
-    },
-    [client, loadAgents, retryPendingSetupBusyAgentId, setError]
-  );
-
   useEffect(() => {
     stateRef.current = state;
   }, [state]);
-
-  useEffect(() => {
-    pendingCreateSetupsByAgentIdRef.current = pendingCreateSetupsByAgentId;
-  }, [pendingCreateSetupsByAgentId]);
 
   useEffect(() => {
     if (status === "connected") return;
@@ -850,65 +770,6 @@ const AgentStudioPage = () => {
     }
   }, [setLoading, status]);
 
-  useEffect(() => {
-    const loaded = loadPendingGuidedSetupsForScope({
-      storage: window.sessionStorage,
-      gatewayScope: pendingGuidedSetupGatewayScope,
-    });
-    setPendingCreateSetupsByAgentId(loaded.setupsByAgentId);
-    setPendingCreateSetupsLoadedScope(loaded.loadedScope);
-  }, [pendingGuidedSetupGatewayScope]);
-
-  useEffect(() => {
-    pendingSetupAutoRetryAttemptedRef.current.clear();
-    pendingSetupAutoRetryInFlightRef.current.clear();
-    setRetryPendingSetupBusyAgentId(null);
-  }, [pendingGuidedSetupGatewayScope]);
-
-  useEffect(() => {
-    if (status === "connected") return;
-    pendingSetupAutoRetryAttemptedRef.current.clear();
-    pendingSetupAutoRetryInFlightRef.current.clear();
-    setRetryPendingSetupBusyAgentId(null);
-  }, [status]);
-
-  useEffect(() => {
-    persistPendingGuidedSetupsForScopeWhenLoaded({
-      storage: window.sessionStorage,
-      gatewayScope: pendingGuidedSetupGatewayScope,
-      loadedScope: pendingCreateSetupsLoadedScope,
-      setupsByAgentId: pendingCreateSetupsByAgentId,
-    });
-  }, [pendingCreateSetupsByAgentId, pendingCreateSetupsLoadedScope, pendingGuidedSetupGatewayScope]);
-
-  useEffect(() => {
-    void runPendingGuidedSetupAutoRetryViaStudio({
-      status,
-      agentsLoadedOnce,
-      loadedScopeMatches: pendingCreateSetupsLoadedScope === pendingGuidedSetupGatewayScope,
-      hasActiveCreateBlock: Boolean(createAgentBlock && createAgentBlock.phase !== "queued"),
-      retryBusyAgentId: retryPendingSetupBusyAgentId,
-      pendingSetupsByAgentId: pendingCreateSetupsByAgentId,
-      knownAgentIds: new Set(agents.map((agent) => agent.agentId)),
-      attemptedAgentIds: pendingSetupAutoRetryAttemptedRef.current,
-      inFlightAgentIds: pendingSetupAutoRetryInFlightRef.current,
-      applyRetry: (agentId) =>
-        applyPendingCreateSetupForAgentId({
-          agentId,
-          source: "auto",
-        }),
-    });
-  }, [
-    agents,
-    agentsLoadedOnce,
-    applyPendingCreateSetupForAgentId,
-    createAgentBlock,
-    pendingCreateSetupsByAgentId,
-    pendingCreateSetupsLoadedScope,
-    pendingGuidedSetupGatewayScope,
-    retryPendingSetupBusyAgentId,
-    status,
-  ]);
 
   useEffect(() => {
     if (!settingsAgentId) return;
@@ -1518,7 +1379,6 @@ const AgentStudioPage = () => {
           hasRenameBlock: Boolean(renameAgentBlock),
           hasDeleteBlock: Boolean(deleteAgentBlock),
           createAgentBusy,
-          isLocalGateway,
         },
         {
           enqueueConfigMutation,
@@ -1535,23 +1395,6 @@ const AgentStudioPage = () => {
             setMobilePane("chat");
             return { id: created.id };
           },
-          applySetup: async (agentId, setup) => {
-            await applyGuidedAgentSetup({
-              client,
-              agentId,
-              setup,
-            });
-          },
-          upsertPending: (agentId, setup) => {
-            setPendingCreateSetupsByAgentId((current) =>
-              upsertPendingGuidedSetup(current, agentId, setup)
-            );
-          },
-          removePending: (agentId) => {
-            setPendingCreateSetupsByAgentId((current) =>
-              removePendingGuidedSetup(current, agentId)
-            );
-          },
           setQueuedBlock: ({ agentName, startedAt }) => {
             const queuedCreateBlock = buildQueuedMutationBlock({
               kind: "create-agent",
@@ -1560,7 +1403,6 @@ const AgentStudioPage = () => {
               startedAt,
             });
             setCreateAgentBlock({
-              agentId: null,
               agentName: queuedCreateBlock.agentName,
               phase: "queued",
               startedAt: queuedCreateBlock.startedAt,
@@ -1572,26 +1414,12 @@ const AgentStudioPage = () => {
               return { ...current, phase: "creating" };
             });
           },
-          setApplyingSetupBlock: ({ agentName, agentId }) => {
-            setCreateAgentBlock((current) => {
-              if (!current || current.agentName !== agentName) return current;
-              return { ...current, agentId, phase: "applying-setup" };
-            });
-          },
-          onCompletion: async (completion) => {
-            if (completion.shouldReloadAgents) {
-              await loadAgents();
-            }
+          onCompletion: async () => {
+            await loadAgents();
             setCreateAgentBlock(null);
-            if (completion.shouldCloseCreateModal) {
-              setCreateAgentModalOpen(false);
-            }
+            setCreateAgentModalOpen(false);
             setMobilePane("chat");
-            if (completion.pendingErrorMessage) {
-              setError(completion.pendingErrorMessage);
-            }
           },
-          setCreateAgentModalOpen,
           setCreateAgentModalError,
           setCreateAgentBusy,
           clearCreateBlock: () => {
@@ -1610,7 +1438,6 @@ const AgentStudioPage = () => {
       enqueueConfigMutation,
       flushPendingDraft,
       focusedAgent,
-      isLocalGateway,
       loadAgents,
       persistAvatarSeed,
       renameAgentBlock,
@@ -1842,30 +1669,6 @@ const AgentStudioPage = () => {
     },
     [dispatch]
   );
-
-  const handleRetryPendingCreateSetup = useCallback(
-    async (agentId: string) => {
-      const resolvedAgentId = agentId.trim();
-      if (!resolvedAgentId) return;
-      await applyPendingCreateSetupForAgentId({
-        agentId: resolvedAgentId,
-        source: "manual",
-      });
-    },
-    [applyPendingCreateSetupForAgentId]
-  );
-
-  const handleDiscardPendingCreateSetup = useCallback((agentId: string) => {
-    const resolvedAgentId = agentId.trim();
-    if (!resolvedAgentId) return;
-    const confirmed = window.confirm(
-      `Discard pending guided setup for "${resolvedAgentId}"? The agent will remain unchanged.`
-    );
-    if (!confirmed) return;
-    setPendingCreateSetupsByAgentId((current) =>
-      removePendingGuidedSetup(current, resolvedAgentId)
-    );
-  }, []);
 
   const handleResolveExecApproval = useCallback(
     async (approvalId: string, decision: ExecApprovalDecision) => {
@@ -2351,9 +2154,7 @@ const AgentStudioPage = () => {
       ? "Waiting for active runs to finish"
       : createAgentBlock.phase === "creating"
       ? "Submitting config change"
-      : createAgentBlock.phase === "applying-setup"
-        ? "Applying guided setup"
-        : null
+      : null
     : null;
   const renameBlockStatusLine = resolveConfigMutationStatusLine({
     block: renameAgentBlock
@@ -2581,40 +2382,6 @@ const AgentStudioPage = () => {
           >
             {focusedAgent ? (
               <div className="flex min-h-0 flex-1 flex-col">
-                {focusedPendingCreateSetup ? (
-                  <div
-                    className="mx-3 mt-3 rounded-md border border-amber-500/40 bg-amber-500/12 px-3 py-2 sm:mx-4"
-                    data-testid="pending-guided-setup-card"
-                  >
-                    <div className="font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-amber-900">
-                      Guided setup pending
-                    </div>
-                    <div className="mt-1 text-[11px] text-muted-foreground">
-                      This agent was created, but setup did not finish. Retry setup now or discard
-                      the pending setup and keep the current agent state.
-                    </div>
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      <button
-                        type="button"
-                        className="rounded-[8px] border border-border/70 bg-surface-3 px-2.5 py-1 font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-foreground transition hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-60"
-                        onClick={() => {
-                          void handleRetryPendingCreateSetup(focusedAgent.agentId);
-                        }}
-                        disabled={status !== "connected" || focusedPendingCreateSetupBusy}
-                      >
-                        {focusedPendingCreateSetupBusy ? "Applying..." : "Retry setup"}
-                      </button>
-                      <button
-                        type="button"
-                        className="rounded-[8px] border border-border/70 bg-surface-3 px-2.5 py-1 font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-foreground transition hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-60"
-                        onClick={() => handleDiscardPendingCreateSetup(focusedAgent.agentId)}
-                        disabled={focusedPendingCreateSetupBusy}
-                      >
-                        Discard pending setup
-                      </button>
-                    </div>
-                  </div>
-                ) : null}
                 <div className="min-h-0 flex-1">
                   <AgentChatPanel
                     agent={focusedAgent}
@@ -2725,7 +2492,6 @@ const AgentStudioPage = () => {
       </div>
       {createAgentModalOpen ? (
         <AgentCreateModal
-          key={suggestedCreateAgentName}
           open={createAgentModalOpen}
           suggestedName={suggestedCreateAgentName}
           busy={createAgentBusy}

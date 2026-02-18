@@ -2,15 +2,6 @@ import { describe, expect, it } from "vitest";
 
 import type { PendingExecApproval } from "@/features/agents/approvals/types";
 import { resolveExecApprovalFollowUpIntent } from "@/features/agents/approvals/execApprovalLifecycleWorkflow";
-import {
-  beginPendingGuidedSetupRetry,
-  selectNextPendingGuidedSetupRetryAgentId,
-} from "@/features/agents/creation/pendingSetupRetry";
-import {
-  runPendingSetupRetryLifecycle,
-  shouldAttemptPendingSetupAutoRetry,
-} from "@/features/agents/operations/pendingSetupLifecycleWorkflow";
-import type { AgentGuidedSetup } from "@/features/agents/operations/createAgentOperation";
 import type { AgentState } from "@/features/agents/state/store";
 
 const createAgent = (agentId: string, sessionKey: string): AgentState => ({
@@ -64,74 +55,7 @@ const createApproval = (): PendingExecApproval => ({
   error: null,
 });
 
-const createSetup = (): AgentGuidedSetup => ({
-  agentOverrides: {
-    sandbox: { mode: "non-main", workspaceAccess: "ro" },
-    tools: { profile: "coding", alsoAllow: ["group:runtime"], deny: [] },
-  },
-  files: {},
-  execApprovals: null,
-});
-
 describe("lifecycleControllerWorkflow integration", () => {
-  it("pending setup auto-retry path preserves existing guard semantics", () => {
-    const shouldRun = shouldAttemptPendingSetupAutoRetry({
-      status: "connected",
-      agentsLoadedOnce: true,
-      loadedScopeMatches: true,
-      hasActiveCreateBlock: false,
-      retryBusyAgentId: null,
-    });
-    expect(shouldRun).toBe(true);
-
-    const inFlightAgentIds = new Set<string>();
-    const pendingSetupsByAgentId = { "agent-1": createSetup() };
-    const targetAgentId = selectNextPendingGuidedSetupRetryAgentId({
-      pendingSetupsByAgentId,
-      knownAgentIds: new Set(["agent-1"]),
-      attemptedAgentIds: new Set(),
-      inFlightAgentIds,
-    });
-    expect(targetAgentId).toBe("agent-1");
-
-    const startedFirst = beginPendingGuidedSetupRetry(inFlightAgentIds, "agent-1");
-    const startedSecond = beginPendingGuidedSetupRetry(inFlightAgentIds, "agent-1");
-    expect(startedFirst).toBe(true);
-    expect(startedSecond).toBe(false);
-  });
-
-  it("manual retry failure still clears busy state and surfaces user error", async () => {
-    let busyAgentId: string | null = null;
-    let surfacedError: string | null = null;
-
-    const runManualRetry = async (agentId: string) => {
-      busyAgentId = agentId;
-      try {
-        return await runPendingSetupRetryLifecycle(
-          { agentId, source: "manual" },
-          {
-            executeRetry: async () => {
-              throw new Error("setup exploded");
-            },
-            isDisconnectLikeError: () => false,
-            resolveAgentName: () => "Agent One",
-            onApplied: async () => undefined,
-            onError: (message) => {
-              surfacedError = message;
-            },
-          }
-        );
-      } finally {
-        busyAgentId = busyAgentId === agentId ? null : busyAgentId;
-      }
-    };
-
-    const applied = await runManualRetry("agent-1");
-    expect(applied).toBe(false);
-    expect(busyAgentId).toBeNull();
-    expect(surfacedError).toBe('Guided setup retry failed for "Agent One". setup exploded');
-  });
-
   it("allow-once and allow-always still trigger follow-up message send once", () => {
     const approval = createApproval();
     const agents = [createAgent("agent-1", "agent:agent-1:main")];

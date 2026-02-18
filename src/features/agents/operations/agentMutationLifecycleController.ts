@@ -1,7 +1,3 @@
-import { type AgentGuidedSetup } from "@/features/agents/operations/createAgentOperation";
-import { shouldAttemptPendingSetupAutoRetry } from "@/features/agents/operations/pendingSetupLifecycleWorkflow";
-import { selectNextPendingGuidedSetupRetryAgentId } from "@/features/agents/creation/pendingSetupRetry";
-
 export type MutationKind = "create-agent" | "rename-agent" | "delete-agent";
 
 export type MutationBlockPhase = "queued" | "mutating" | "awaiting-restart";
@@ -105,77 +101,6 @@ export const buildMutationSideEffectCommands = (params: {
     ];
   }
   return [{ kind: "patch-mutation-block", patch: postRunIntent.patch }];
-};
-
-export type PendingSetupAutoRetryIntent =
-  | {
-      kind: "skip";
-      reason:
-        | "not-connected"
-        | "agents-not-loaded"
-        | "scope-mismatch"
-        | "create-block-active"
-        | "retry-busy"
-        | "no-eligible-agent";
-    }
-  | { kind: "retry"; agentId: string };
-
-const resolvePendingSetupSkipReason = (params: {
-  status: "connected" | "connecting" | "disconnected";
-  agentsLoadedOnce: boolean;
-  loadedScopeMatches: boolean;
-  hasActiveCreateBlock: boolean;
-  retryBusyAgentId: string | null;
-}): PendingSetupAutoRetryIntent => {
-  if (params.status !== "connected") {
-    return { kind: "skip", reason: "not-connected" };
-  }
-  if (!params.agentsLoadedOnce) {
-    return { kind: "skip", reason: "agents-not-loaded" };
-  }
-  if (!params.loadedScopeMatches) {
-    return { kind: "skip", reason: "scope-mismatch" };
-  }
-  if (params.hasActiveCreateBlock) {
-    return { kind: "skip", reason: "create-block-active" };
-  }
-  if (params.retryBusyAgentId) {
-    return { kind: "skip", reason: "retry-busy" };
-  }
-  return { kind: "skip", reason: "no-eligible-agent" };
-};
-
-export const resolvePendingSetupAutoRetryIntent = (params: {
-  status: "connected" | "connecting" | "disconnected";
-  agentsLoadedOnce: boolean;
-  loadedScopeMatches: boolean;
-  hasActiveCreateBlock: boolean;
-  retryBusyAgentId: string | null;
-  pendingSetupsByAgentId: Record<string, unknown>;
-  knownAgentIds: Set<string>;
-  attemptedAgentIds: Set<string>;
-  inFlightAgentIds: Set<string>;
-}): PendingSetupAutoRetryIntent => {
-  const shouldAttempt = shouldAttemptPendingSetupAutoRetry({
-    status: params.status,
-    agentsLoadedOnce: params.agentsLoadedOnce,
-    loadedScopeMatches: params.loadedScopeMatches,
-    hasActiveCreateBlock: params.hasActiveCreateBlock,
-    retryBusyAgentId: params.retryBusyAgentId,
-  });
-  if (!shouldAttempt) {
-    return resolvePendingSetupSkipReason(params);
-  }
-  const targetAgentId = selectNextPendingGuidedSetupRetryAgentId({
-    pendingSetupsByAgentId: params.pendingSetupsByAgentId as Record<string, AgentGuidedSetup>,
-    knownAgentIds: params.knownAgentIds,
-    attemptedAgentIds: params.attemptedAgentIds,
-    inFlightAgentIds: params.inFlightAgentIds,
-  });
-  if (!targetAgentId) {
-    return { kind: "skip", reason: "no-eligible-agent" };
-  }
-  return { kind: "retry", agentId: targetAgentId };
 };
 
 export type MutationTimeoutIntent =

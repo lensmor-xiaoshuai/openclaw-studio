@@ -7,7 +7,6 @@ import {
   resolveMutationPostRunIntent,
   resolveMutationStartGuard,
   resolveMutationTimeoutIntent,
-  resolvePendingSetupAutoRetryIntent,
 } from "@/features/agents/operations/agentMutationLifecycleController";
 
 describe("agentMutationLifecycleController", () => {
@@ -108,47 +107,6 @@ describe("agentMutationLifecycleController", () => {
         patch: { phase: "awaiting-restart", sawDisconnect: false },
       },
     ]);
-  });
-
-  it("selects pending setup auto-retry target only when all gates pass", () => {
-    expect(
-      resolvePendingSetupAutoRetryIntent({
-        status: "connected",
-        agentsLoadedOnce: true,
-        loadedScopeMatches: true,
-        hasActiveCreateBlock: false,
-        retryBusyAgentId: null,
-        pendingSetupsByAgentId: {
-          "agent-b": {},
-          "agent-a": {},
-        },
-        knownAgentIds: new Set(["agent-a", "agent-b"]),
-        attemptedAgentIds: new Set(["agent-a"]),
-        inFlightAgentIds: new Set<string>(),
-      })
-    ).toEqual({
-      kind: "retry",
-      agentId: "agent-b",
-    });
-
-    expect(
-      resolvePendingSetupAutoRetryIntent({
-        status: "connected",
-        agentsLoadedOnce: true,
-        loadedScopeMatches: true,
-        hasActiveCreateBlock: false,
-        retryBusyAgentId: null,
-        pendingSetupsByAgentId: {
-          "agent-a": {},
-        },
-        knownAgentIds: new Set(["agent-a"]),
-        attemptedAgentIds: new Set(["agent-a"]),
-        inFlightAgentIds: new Set<string>(),
-      })
-    ).toEqual({
-      kind: "skip",
-      reason: "no-eligible-agent",
-    });
   });
 
   it("returns timeout intent when mutation block exceeds max wait", () => {

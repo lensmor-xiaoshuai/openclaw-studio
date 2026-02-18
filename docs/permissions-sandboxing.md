@@ -7,7 +7,7 @@ This document exists to onboard coding agents quickly when debugging:
 - How “create agent” choices in **OpenClaw Studio** flow into the **OpenClaw Gateway** (often running on an EC2 host) where enforcement actually happens
 
 Scope:
-- Studio guided agent creation (the “authority level” / permissions choices) and the exact gateway calls it makes.
+- Studio one-step agent creation and post-create authority updates, including exact gateway calls.
 - The upstream OpenClaw implementation that persists and enforces those settings at runtime.
 
 Non-scope:
@@ -41,82 +41,49 @@ The Gateway (OpenClaw) is the enforcement point:
 
 ## Studio: Where “Permissions” Are Chosen
 
-Guided creation UI:
-- `src/features/agents/components/AgentCreateModal.tsx`
+Agent creation is now create-only:
+- `src/features/agents/components/AgentCreateModal.tsx` captures `name` and optional avatar shuffle seed.
+- `src/features/agents/operations/createAgentMutationLifecycleOperation.ts` applies queue/guard behavior and calls create.
+- `src/lib/gateway/agentConfig.ts` (`createGatewayAgent`) performs `config.get` + `agents.create`.
 
-Guided draft compilation (UI intent -> concrete gateway setup):
-- `src/features/agents/creation/compiler.ts` (`compileGuidedAgentCreation`)
+Authority/permission changes happen after creation from settings:
+- `src/features/agents/operations/executionRoleUpdateOperation.ts` (`updateExecutionRoleViaStudio`)
+  - updates per-agent exec approvals (`exec.approvals.get` + `exec.approvals.set`)
+  - updates runtime tool overrides (`config.get` + `config.patch` via `updateGatewayAgentOverrides`)
+  - updates session exec behavior (`sessions.patch` via `syncGatewaySessionSettings`)
 
-Key outputs of compilation:
-- `files`: content for `IDENTITY.md`, `SOUL.md`, etc (written via gateway `agents.files.set`)
-- `agentOverrides`:
-  - `sandbox.mode`
-  - `sandbox.workspaceAccess`
-  - `tools.profile`
-  - `tools.alsoAllow`
-  - `tools.deny`
-- `execApprovals` (when exec/runtime tools are enabled):
-  - `security`: `deny | allowlist | full`
-  - `ask`: `off | on-miss | always`
-  - `allowlist`: patterns
+### Runtime Tool Groups Used By Post-Create Role Updates
 
-### Tool Profiles And Tool Groups (What Studio Is Actually Writing)
-
-Studio’s guided presets use the same tool profiles and tool groups that upstream OpenClaw expands:
-- Upstream groups + profiles: `openclaw/src/agents/tool-policy.ts`
-
-Common groups referenced by Studio:
-- `group:fs`: `read`, `write`, `edit`, `apply_patch`
-- `group:runtime`: `exec`, `process`
-- `group:web`: `web_search`, `web_fetch`
-- `group:sessions`: `sessions_*` tools
-- `group:memory`: memory tools
+Studio role updates still rely on OpenClaw tool-group expansion (`openclaw/src/agents/tool-policy.ts`), especially:
+- `group:runtime` -> runtime execution tools (`exec`, `process`)
 
 What this means in practice:
-- If Studio denies `group:runtime`, upstream expands that into denying `exec` and `process`, so command execution becomes unavailable regardless of exec approvals policy.
-- If Studio denies `write/edit/apply_patch` directly (as it does in “propose-only”), upstream will enforce that at tool selection time even if the sandbox has a writable workspace directory.
-
-### Studio Gotcha: `sandbox.mode` Is Currently Hardcoded
-
-In `compileGuidedAgentCreation`, Studio currently sets:
-- `const normalizedSandboxMode = "off";`
-
-That means guided creation always writes `sandbox.mode = "off"` for newly created agents.
+- Conservative role removes runtime group access and sets exec approvals to deny.
+- Collaborative/autonomous roles include runtime group access and set exec approvals to allowlist/full respectively.
 
 ## Studio -> Gateway: “Create Agent” End-to-End
 
 Primary entry points:
-- `src/features/agents/operations/createAgentOperation.ts` (`createAgentWithOptionalSetup`, `applyGuidedAgentSetup`)
-- `src/lib/gateway/agentConfig.ts` (`createGatewayAgent`, `updateGatewayAgentOverrides`)
-- `src/lib/gateway/agentFiles.ts` (writes bootstrap files)
-- `src/lib/gateway/execApprovals.ts` (writes per-agent exec approvals policy)
+- `src/features/agents/operations/createAgentMutationLifecycleOperation.ts`
+- `src/lib/gateway/agentConfig.ts` (`createGatewayAgent`)
 
-Sequence (local gateway):
+Sequence:
 
 ```mermaid
 sequenceDiagram
   participant UI as Studio UI
-  participant C as Studio compiler
+  participant L as Create lifecycle
   participant GC as Studio GatewayClient
   participant G as OpenClaw Gateway
 
-  UI->>C: compileGuidedAgentCreation(draft)
-  C-->>UI: { files, agentOverrides, execApprovals }
-
-  UI->>GC: createGatewayAgent(name)
+  UI->>L: submit({ name, avatarSeed? })
+  L->>GC: createGatewayAgent(name)
   GC->>G: config.get
   G-->>GC: { path: ".../openclaw.json", ... }
   GC->>G: agents.create({ name, workspace: "<stateDir>/workspace-<slug>" })
   G-->>GC: { agentId, workspace }
-
-  UI->>GC: applyGuidedAgentSetup(agentId)
-  GC->>G: agents.files.set (write files)
-  GC->>G: exec.approvals.set (per-agent policy)
-  GC->>G: config.set (agentOverrides)
+  L-->>UI: completion(agentId)
 ```
-
-Remote gateway nuance:
-- `createAgentWithOptionalSetup` returns `awaitingRestart: true` for non-local gateways and defers applying the setup until Studio’s restart-block workflow runs. (The settings still end up persisted on the gateway host; Studio is just coordinating when to write them.)
 
 ### How Studio Chooses the Default Workspace Path
 
@@ -131,17 +98,9 @@ Logic:
 
 Important: for a remote gateway (EC2), that `workspace` path refers to the gateway host filesystem, not your laptop.
 
-## Studio: Sandbox Env Allowlist Sync (Why It Exists)
+## Studio: Sandbox Env Allowlist Sync (Current Scope)
 
-When guided setup applies, Studio first calls:
-- `src/lib/gateway/sandboxEnvAllowlist.ts` (`ensureGatewaySandboxEnvAllowlistFromDotEnv`)
-
-Behavior:
-- Reads dotenv keys from `/api/gateway/dotenv-keys` (best-effort; if the route is missing it returns).
-- Patches the gateway config (`config.set`) to ensure `agents.defaults.sandbox.docker.env` includes entries like:
-  - `FOO: "${FOO}"`
-
-This is a “plumbing” step so sandbox containers can receive expected environment variables without Studio needing to hardcode them into agent templates.
+Create flow does not perform setup writes during initial create anymore. If Studio needs to ensure sandbox env allowlist entries, that behavior should be attached to explicit settings/config operations rather than create-time side effects.
 
 ## OpenClaw (Upstream): What `agents.create` Actually Does
 
@@ -264,17 +223,19 @@ Key enforcement:
 This is why “`workspaceAccess=ro`” means more than “mount it read-only”:
 - It is also a tool-policy gate that prevents direct file writes/edits through PI tools.
 
-### Studio Gotcha: Guided Validation Does Not Match Upstream Enforcement
+### Studio Note: Authority Is No Longer Compiled During Create
 
-In `src/features/agents/creation/compiler.ts`, Studio currently validates:
-- “Auto file edits require sandbox workspace access ro or rw.”
+Studio create flow no longer compiles authority/sandbox settings during initial create.
 
-But upstream OpenClaw disables PI write/edit/apply_patch when `workspaceAccess === "ro"`.
+When authority is changed post-create, Studio uses:
+- `src/features/agents/operations/executionRoleUpdateOperation.ts`
 
-So if “auto-edit” is intended to mean “agent can apply edits via tools to the real workspace”, the effective requirement is:
-- `sandbox.workspaceAccess = "rw"`
+That operation updates:
+- exec approvals policy (`exec.approvals.set`)
+- per-agent tool overrides (`config.patch` via `updateGatewayAgentOverrides`)
+- session exec host/security/ask (`sessions.patch`)
 
-If `workspaceAccess = "none"`, upstream may still allow sandboxed write/edit tools, but those edits apply to the sandbox workspace, not the agent workspace (and the agent workspace is not mounted).
+Upstream enforcement is unchanged: `workspaceAccess="ro"` still disables PI `write`/`edit`/`apply_patch` in sandboxed sessions.
 
 ## Session-Level Exec Settings (Where `exec` Runs)
 

@@ -1,23 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { createDefaultGuidedDraft } from "@/features/agents/creation/compiler";
 import type { AgentCreateModalSubmitPayload } from "@/features/agents/creation/types";
-import type {
-  CreateAgentMutationLifecycleDeps,
-} from "@/features/agents/operations/createAgentMutationLifecycleOperation";
+import type { CreateAgentMutationLifecycleDeps } from "@/features/agents/operations/createAgentMutationLifecycleOperation";
 import {
   isCreateBlockTimedOut,
   runCreateAgentMutationLifecycle,
-  runPendingCreateSetupRetryLifecycle,
 } from "@/features/agents/operations/createAgentMutationLifecycleOperation";
-import type { AgentGuidedSetup } from "@/features/agents/operations/createAgentOperation";
 
 const createPayload = (
   overrides: Partial<AgentCreateModalSubmitPayload> = {}
 ): AgentCreateModalSubmitPayload => ({
-  mode: "guided",
   name: "Agent One",
-  draft: createDefaultGuidedDraft(),
   avatarSeed: "seed-1",
   ...overrides,
 });
@@ -29,14 +22,9 @@ const createDeps = (
     await run();
   },
   createAgent: async () => ({ id: "agent-1" }),
-  applySetup: async () => undefined,
-  upsertPending: () => undefined,
-  removePending: () => undefined,
   setQueuedBlock: () => undefined,
   setCreatingBlock: () => undefined,
-  setApplyingSetupBlock: () => undefined,
   onCompletion: async () => undefined,
-  setCreateAgentModalOpen: () => undefined,
   setCreateAgentModalError: () => undefined,
   setCreateAgentBusy: () => undefined,
   clearCreateBlock: () => undefined,
@@ -57,7 +45,6 @@ describe("createAgentMutationLifecycleOperation", () => {
         hasRenameBlock: false,
         hasDeleteBlock: false,
         createAgentBusy: false,
-        isLocalGateway: true,
       },
       createDeps({
         setCreateAgentModalError,
@@ -70,22 +57,18 @@ describe("createAgentMutationLifecycleOperation", () => {
     expect(enqueueConfigMutation).not.toHaveBeenCalled();
   });
 
-  it("fails fast on compile validation error and does not enqueue mutation", async () => {
+  it("fails fast when the submitted name is empty", async () => {
     const setCreateAgentModalError = vi.fn();
     const enqueueConfigMutation = vi.fn(async () => undefined);
-    const invalidDraft = createDefaultGuidedDraft();
-    invalidDraft.controls.execAutonomy = "auto";
-    invalidDraft.controls.allowExec = false;
 
     const result = await runCreateAgentMutationLifecycle(
       {
-        payload: createPayload({ draft: invalidDraft }),
+        payload: createPayload({ name: "   " }),
         status: "connected",
         hasCreateBlock: false,
         hasRenameBlock: false,
         hasDeleteBlock: false,
         createAgentBusy: false,
-        isLocalGateway: true,
       },
       createDeps({
         setCreateAgentModalError,
@@ -94,14 +77,14 @@ describe("createAgentMutationLifecycleOperation", () => {
     );
 
     expect(result).toBe(false);
-    expect(setCreateAgentModalError).toHaveBeenCalledWith("Auto exec requires runtime tools to be enabled.");
+    expect(setCreateAgentModalError).toHaveBeenCalledWith("Agent name is required.");
     expect(enqueueConfigMutation).not.toHaveBeenCalled();
   });
 
-  it("runs successful local create/apply flow and completion commands", async () => {
+  it("runs create-only lifecycle and completion callback", async () => {
     const order: string[] = [];
-    const onCompletion = vi.fn(async (completion: { pendingErrorMessage: string | null }) => {
-      order.push(`completion:${completion.pendingErrorMessage === null ? "applied" : "pending"}`);
+    const onCompletion = vi.fn(async (completion: { agentId: string; agentName: string }) => {
+      order.push(`completion:${completion.agentId}:${completion.agentName}`);
     });
 
     const result = await runCreateAgentMutationLifecycle(
@@ -112,7 +95,6 @@ describe("createAgentMutationLifecycleOperation", () => {
         hasRenameBlock: false,
         hasDeleteBlock: false,
         createAgentBusy: false,
-        isLocalGateway: true,
       },
       createDeps({
         setCreateAgentBusy: (busy) => {
@@ -135,18 +117,6 @@ describe("createAgentMutationLifecycleOperation", () => {
           order.push("createAgent");
           return { id: "agent-1" };
         },
-        setApplyingSetupBlock: () => {
-          order.push("applying");
-        },
-        applySetup: async () => {
-          order.push("applySetup");
-        },
-        removePending: () => {
-          order.push("removePending");
-        },
-        setCreateAgentModalOpen: (open) => {
-          order.push(`modalOpen:${open ? "true" : "false"}`);
-        },
         onCompletion,
       })
     );
@@ -159,20 +129,16 @@ describe("createAgentMutationLifecycleOperation", () => {
       "enqueue",
       "creating",
       "createAgent",
-      "modalOpen:false",
-      "applying",
-      "applySetup",
-      "removePending",
-      "completion:applied",
+      "completion:agent-1:Agent One",
       "busy:off",
     ]);
     expect(onCompletion).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps create successful but reports pending completion when setup apply fails", async () => {
-    const upsertPending = vi.fn();
-    const removePending = vi.fn();
-    const onCompletion = vi.fn();
+  it("surfaces create errors and clears create block", async () => {
+    const clearCreateBlock = vi.fn();
+    const setCreateAgentModalError = vi.fn();
+    const onError = vi.fn();
 
     const result = await runCreateAgentMutationLifecycle(
       {
@@ -182,78 +148,21 @@ describe("createAgentMutationLifecycleOperation", () => {
         hasRenameBlock: false,
         hasDeleteBlock: false,
         createAgentBusy: false,
-        isLocalGateway: true,
       },
       createDeps({
-        applySetup: async () => {
-          throw new Error("setup exploded");
+        createAgent: async () => {
+          throw new Error("create exploded");
         },
-        upsertPending,
-        removePending,
-        onCompletion,
+        clearCreateBlock,
+        setCreateAgentModalError,
+        onError,
       })
     );
 
-    expect(result).toBe(true);
-    expect(upsertPending).toHaveBeenCalledTimes(1);
-    expect(removePending).not.toHaveBeenCalled();
-    expect(onCompletion).toHaveBeenCalledWith({
-      shouldReloadAgents: true,
-      shouldCloseCreateModal: true,
-      pendingErrorMessage:
-        'Agent "Agent One" was created, but guided setup is pending. Retry or discard setup from chat. setup exploded',
-    });
-  });
-
-  it("handles manual pending setup retry success", async () => {
-    const pendingSetup = {} as AgentGuidedSetup;
-    const onApplied = vi.fn();
-    const removePending = vi.fn();
-    const onError = vi.fn();
-
-    const result = await runPendingCreateSetupRetryLifecycle({
-      agentId: "agent-1",
-      source: "manual",
-      retryBusyAgentId: null,
-      inFlightAgentIds: new Set<string>(),
-      pendingSetupsByAgentId: { "agent-1": pendingSetup },
-      setRetryBusyAgentId: () => undefined,
-      applyPendingSetup: async () => ({ applied: true }),
-      removePending,
-      isDisconnectLikeError: () => false,
-      resolveAgentName: () => "Agent One",
-      onApplied,
-      onError,
-    });
-
-    expect(result).toBe(true);
-    expect(removePending).toHaveBeenCalledWith("agent-1");
-    expect(onApplied).toHaveBeenCalledTimes(1);
-    expect(onError).not.toHaveBeenCalled();
-  });
-
-  it("surfaces manual pending setup retry failures", async () => {
-    const onError = vi.fn();
-
-    const result = await runPendingCreateSetupRetryLifecycle({
-      agentId: "agent-1",
-      source: "manual",
-      retryBusyAgentId: null,
-      inFlightAgentIds: new Set<string>(),
-      pendingSetupsByAgentId: { "agent-1": {} as AgentGuidedSetup },
-      setRetryBusyAgentId: () => undefined,
-      applyPendingSetup: async () => {
-        throw new Error("retry exploded");
-      },
-      removePending: () => undefined,
-      isDisconnectLikeError: () => false,
-      resolveAgentName: () => "Agent One",
-      onApplied: () => undefined,
-      onError,
-    });
-
     expect(result).toBe(false);
-    expect(onError).toHaveBeenCalledWith('Guided setup retry failed for "Agent One". retry exploded');
+    expect(clearCreateBlock).toHaveBeenCalledTimes(1);
+    expect(setCreateAgentModalError).toHaveBeenCalledWith("create exploded");
+    expect(onError).toHaveBeenCalledWith("create exploded");
   });
 
   it("maps create block timeout through shared mutation timeout policy", () => {
@@ -268,7 +177,6 @@ describe("createAgentMutationLifecycleOperation", () => {
     expect(
       isCreateBlockTimedOut({
         block: {
-          agentId: null,
           agentName: "Agent One",
           phase: "queued",
           startedAt: 0,
@@ -281,27 +189,13 @@ describe("createAgentMutationLifecycleOperation", () => {
     expect(
       isCreateBlockTimedOut({
         block: {
-          agentId: "agent-1",
           agentName: "Agent One",
           phase: "creating",
           startedAt: 0,
         },
-        nowMs: 95_000,
+        nowMs: 100_000,
         maxWaitMs: 90_000,
       })
     ).toBe(true);
-
-    expect(
-      isCreateBlockTimedOut({
-        block: {
-          agentId: "agent-1",
-          agentName: "Agent One",
-          phase: "applying-setup",
-          startedAt: 0,
-        },
-        nowMs: 45_000,
-        maxWaitMs: 90_000,
-      })
-    ).toBe(false);
   });
 });

@@ -441,7 +441,8 @@ describe("historySyncOperation integration", () => {
     }
     const lines = finalUpdate.patch.outputLines ?? runningAgent.outputLines;
     expect(lines.filter((line) => line === "win + progress + cleanup")).toHaveLength(1);
-    const transcriptEntries = finalUpdate.patch.transcriptEntries ?? runningAgent.transcriptEntries;
+    const transcriptEntries =
+      finalUpdate.patch.transcriptEntries ?? runningAgent.transcriptEntries ?? [];
     expect(
       transcriptEntries.filter(
         (entry) => entry.kind === "assistant" && entry.text === "win + progress + cleanup"
