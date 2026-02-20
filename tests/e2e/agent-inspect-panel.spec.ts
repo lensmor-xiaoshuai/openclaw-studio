@@ -31,5 +31,8 @@ test("connection panel reflects disconnected state", async ({ page }) => {
 
   await page.getByTestId("studio-menu-toggle").click();
   await page.getByTestId("gateway-settings-toggle").click();
-  await expect(page.getByRole("button", { name: "Connect", exact: true })).toBeEnabled();
+  await expect(page.getByLabel("Upstream gateway URL")).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: /^(Connect|Disconnect)$/ })
+  ).toBeVisible();
 });

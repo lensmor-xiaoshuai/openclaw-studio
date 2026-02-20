@@ -63,7 +63,7 @@ describe("AgentCreateModal", () => {
   it("renders one-step create form without guided wizard copy", () => {
     openModal();
 
-    expect(screen.getByText("Launch agent")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Launch agent" })).toBeInTheDocument();
     expect(screen.getByLabelText("Agent name")).toBeInTheDocument();
     expect(screen.getByText("Choose avatar")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Shuffle avatar selection" })).toBeInTheDocument();

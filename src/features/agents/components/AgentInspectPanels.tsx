@@ -139,7 +139,6 @@ type CronTemplateOption = {
   title: string;
   description: string;
   icon: typeof Sun;
-  accent: string;
 };
 
 const CRON_TEMPLATE_OPTIONS: CronTemplateOption[] = [
@@ -148,35 +147,30 @@ const CRON_TEMPLATE_OPTIONS: CronTemplateOption[] = [
     title: "Morning Brief",
     description: "Daily status summary with overnight updates.",
     icon: Sun,
-    accent: "bg-amber-500/10",
   },
   {
     id: "reminder",
     title: "Reminder",
     description: "A timed nudge for a specific event or task.",
     icon: Bell,
-    accent: "bg-cyan-500/10",
   },
   {
     id: "weekly-review",
     title: "Weekly Review",
     description: "Recurring synthesis across a longer time window.",
     icon: CalendarDays,
-    accent: "bg-emerald-500/10",
   },
   {
     id: "inbox-triage",
     title: "Inbox Triage",
     description: "Regular sorting and summarizing of incoming updates.",
     icon: ListChecks,
-    accent: "bg-orange-500/10",
   },
   {
     id: "custom",
     title: "Custom",
     description: "Start from a blank flow and choose each setting.",
     icon: ListChecks,
-    accent: "bg-violet-500/10",
   },
 ];
 
@@ -505,8 +499,8 @@ export const AgentSettingsPanel = ({
       style={{ position: "relative", left: "auto", top: "auto", width: "100%", height: "100%" }}
     >
       <AgentInspectHeader
-        label=""
-        title="Agent settings"
+        label="Agent settings"
+        title={agent.name}
         onClose={onClose}
         closeTestId="agent-settings-close"
       />
@@ -527,7 +521,7 @@ export const AgentSettingsPanel = ({
             />
           </label>
           {renameError ? (
-            <div className="mt-3 rounded-md border border-destructive bg-destructive px-3 py-2 text-xs text-destructive-foreground">
+            <div className="ui-alert-danger mt-3 rounded-md px-3 py-2 text-xs">
               {renameError}
             </div>
           ) : null}
@@ -585,7 +579,7 @@ export const AgentSettingsPanel = ({
                 </div>
               </div>
             </div>
-            <div className="flex min-h-[68px] items-center justify-between gap-6 rounded-md bg-surface-2/55 px-4 py-3">
+            <div className="ui-settings-row flex min-h-[68px] items-center justify-between gap-6 px-4 py-3">
               <div className="sidebar-copy flex flex-col">
                 <span className="text-[11px] font-medium text-foreground/88">Web access</span>
               </div>
@@ -605,7 +599,7 @@ export const AgentSettingsPanel = ({
                 <span className="ui-switch-thumb" />
               </button>
             </div>
-            <div className="flex min-h-[68px] items-center justify-between gap-6 rounded-md bg-surface-2/55 px-4 py-3">
+            <div className="ui-settings-row flex min-h-[68px] items-center justify-between gap-6 px-4 py-3">
               <div className="sidebar-copy flex flex-col">
                 <span className="text-[11px] font-medium text-foreground/88">File tools</span>
               </div>
@@ -631,7 +625,7 @@ export const AgentSettingsPanel = ({
             {permissionsSaveState === "saved" ? "Saved." : null}
             {permissionsSaveState === "error" && permissionsSaveError ? (
               <span>
-                Couldn't save. {permissionsSaveError}{" "}
+                Couldn&apos;t save. {permissionsSaveError}{" "}
                 <button
                   type="button"
                   className="underline underline-offset-2"
@@ -645,8 +639,8 @@ export const AgentSettingsPanel = ({
             ) : null}
           </div>
           {permissionsSaveState === "error" && !permissionsSaveError ? (
-            <div className="mt-3 rounded-md border border-destructive bg-destructive px-3 py-2 text-xs text-destructive-foreground">
-              Couldn't save permissions.
+            <div className="ui-alert-danger mt-3 rounded-md px-3 py-2 text-xs">
+              Couldn&apos;t save permissions.
             </div>
           ) : null}
         </section>
@@ -691,7 +685,7 @@ export const AgentSettingsPanel = ({
             <div className="mt-3 text-[11px] text-muted-foreground">Loading cron jobs...</div>
           ) : null}
           {!cronLoading && cronError ? (
-            <div className="mt-3 rounded-md border border-destructive bg-destructive px-3 py-2 text-xs text-destructive-foreground">
+            <div className="ui-alert-danger mt-3 rounded-md px-3 py-2 text-xs">
               {cronError}
             </div>
           ) : null}
@@ -796,7 +790,7 @@ export const AgentSettingsPanel = ({
                         <Play className="h-3.5 w-3.5" />
                       </button>
                       <button
-                        className="ui-btn-icon h-7 w-7 bg-transparent text-destructive hover:bg-destructive/10 disabled:cursor-not-allowed disabled:opacity-60"
+                        className="ui-btn-icon ui-btn-icon-danger h-7 w-7 bg-transparent disabled:cursor-not-allowed disabled:opacity-60"
                         type="button"
                         aria-label={`Delete cron job ${job.name}`}
                         onClick={() => {
@@ -823,7 +817,7 @@ export const AgentSettingsPanel = ({
             <div className="mt-3 text-[11px] text-muted-foreground">Loading heartbeats...</div>
           ) : null}
           {!heartbeatLoading && heartbeatError ? (
-            <div className="mt-3 rounded-md border border-destructive bg-destructive px-3 py-2 text-xs text-destructive-foreground">
+            <div className="ui-alert-danger mt-3 rounded-md px-3 py-2 text-xs">
               {heartbeatError}
             </div>
           ) : null}
@@ -871,7 +865,7 @@ export const AgentSettingsPanel = ({
                         <Play className="h-3.5 w-3.5" />
                       </button>
                       <button
-                        className="ui-btn-icon h-7 w-7 bg-transparent text-destructive hover:bg-destructive/10 disabled:cursor-not-allowed disabled:opacity-60"
+                        className="ui-btn-icon ui-btn-icon-danger h-7 w-7 bg-transparent disabled:cursor-not-allowed disabled:opacity-60"
                         type="button"
                         aria-label={`Delete heartbeat for ${heartbeat.agentId}`}
                         onClick={() => {
@@ -895,7 +889,7 @@ export const AgentSettingsPanel = ({
         >
           <h3 className="sidebar-section-title">Display</h3>
           <div className="mt-3 grid gap-6 md:grid-cols-2">
-            <div className="flex min-h-[68px] items-center justify-between gap-6 rounded-md bg-surface-2/55 px-4 py-3">
+            <div className="ui-settings-row flex min-h-[68px] items-center justify-between gap-6 px-4 py-3">
               <div className="sidebar-copy flex flex-col">
                 <span className="text-[11px] font-medium text-foreground/88">Show tool calls</span>
               </div>
@@ -910,7 +904,7 @@ export const AgentSettingsPanel = ({
                 <span className="ui-switch-thumb" />
               </button>
             </div>
-            <div className="flex min-h-[68px] items-center justify-between gap-6 rounded-md bg-surface-2/55 px-4 py-3">
+            <div className="ui-settings-row flex min-h-[68px] items-center justify-between gap-6 px-4 py-3">
               <div className="sidebar-copy flex flex-col">
                 <span className="text-[11px] font-medium text-foreground/88">Show thinking</span>
               </div>
@@ -930,12 +924,12 @@ export const AgentSettingsPanel = ({
 
         {canDelete ? (
           <section className="sidebar-section mt-8">
-            <h3 className="sidebar-section-title text-destructive">Delete agent</h3>
+            <h3 className="sidebar-section-title ui-text-danger">Delete agent</h3>
             <div className="mt-3 text-[11px] text-muted-foreground/68">
               Removes the agent from the gateway config and deletes its cron jobs.
             </div>
             <button
-              className="sidebar-btn-ghost mt-3 w-full px-3 py-2 font-mono text-[10px] font-semibold tracking-[0.06em] text-destructive hover:bg-destructive/10"
+              className="sidebar-btn-ghost ui-btn-danger mt-3 w-full px-3 py-2 font-mono text-[10px] font-semibold tracking-[0.06em]"
               type="button"
               onClick={onDelete}
             >
@@ -980,7 +974,7 @@ export const AgentSettingsPanel = ({
             </div>
             <div className="space-y-4 px-5 py-5">
               {cronCreateError ? (
-                <div className="rounded-md border border-destructive bg-destructive px-3 py-2 text-xs text-destructive-foreground">
+                <div className="ui-alert-danger rounded-md px-3 py-2 text-xs">
                   {cronCreateError}
                 </div>
               ) : null}
@@ -1000,7 +994,7 @@ export const AgentSettingsPanel = ({
                           aria-label={option.title}
                           className={`ui-card px-3 py-3 text-left transition ${
                             active
-                              ? "ui-selected bg-primary/8"
+                              ? "ui-selected"
                               : "bg-surface-2/60 hover:bg-surface-3/90"
                           }`}
                           onClick={() => selectCronTemplate(option.id)}
@@ -1440,7 +1434,7 @@ export const AgentBrainPanel = ({
             </div>
           </div>
           {agentFilesError ? (
-            <div className="mt-3 rounded-md border border-destructive bg-destructive px-3 py-2 text-xs text-destructive-foreground">
+            <div className="ui-alert-danger mt-3 rounded-md px-3 py-2 text-xs">
               {agentFilesError}
             </div>
           ) : null}

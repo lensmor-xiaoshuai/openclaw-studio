@@ -4,9 +4,9 @@ import {
   resolveExecApprovalsPolicyForRole,
   resolveRuntimeToolOverridesForRole,
   resolveSessionExecSettingsForRole,
-} from "@/features/agents/operations/executionRoleUpdateOperation";
+} from "@/features/agents/operations/agentPermissionsOperation";
 
-describe("executionRoleUpdateOperation", () => {
+describe("permissions role helpers", () => {
   it("maps roles to exec approvals policy while preserving allowlist", () => {
     const allowlist = [{ pattern: "a" }, { pattern: "b" }];
 
@@ -113,4 +113,3 @@ describe("executionRoleUpdateOperation", () => {
     expect(collaborative.tools).not.toHaveProperty("allow");
   });
 });
-

@@ -106,17 +106,27 @@ test("switches_active_agent_from_sidebar", async ({ page }) => {
   await page.route("**/api/studio", createStudioRoute());
   await page.goto("/");
 
-  await expect(page.getByTestId("studio-menu-toggle")).toBeVisible();
-  await expect(page.getByLabel("Copy local gateway command")).toBeVisible();
+  const agentPanel = page.locator("[data-agent-panel]");
+  await expect(agentPanel).toContainText("youtube-channel");
+
+  await page.getByRole("button", { name: /Avatar for main/i }).click();
+  await expect(agentPanel).toContainText("main");
+
+  await page.getByRole("button", { name: /Avatar for Web Researcher/i }).click();
+  await expect(agentPanel).toContainText("Web Researcher");
 });
 
 test("applies_filters", async ({ page }) => {
   await page.route("**/api/studio", createStudioRoute());
   await page.goto("/");
 
-  await page.getByRole("button", { name: "Remote Gateway", exact: true }).click();
-  await expect(page.getByLabel("Upstream URL")).toBeVisible();
-  await expect(page.getByLabel("Upstream Token")).toBeVisible();
+  await page.getByTestId("fleet-filter-running").click();
+  await expect(page.getByTestId("fleet-filter-running")).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByTestId("fleet-filter-all")).toHaveAttribute("aria-pressed", "false");
+
+  await page.getByTestId("fleet-filter-idle").click();
+  await expect(page.getByTestId("fleet-filter-idle")).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByTestId("fleet-filter-running")).toHaveAttribute("aria-pressed", "false");
 });
 
 test("focused_preferences_persist_across_reload", async ({ page }) => {
@@ -138,4 +148,3 @@ test("clears_unseen_indicator_on_focus", async ({ page }) => {
   await page.getByTestId("studio-menu-toggle").click();
   await expect(page.getByTestId("gateway-settings-toggle")).toBeVisible();
 });
-

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useState } from "react";
 import { Shuffle } from "lucide-react";
 import type { AgentCreateModalSubmitPayload } from "@/features/agents/creation/types";
 import { AgentAvatar } from "@/features/agents/components/AgentAvatar";
@@ -26,26 +26,15 @@ const resolveInitialName = (suggestedName: string): string => {
   return trimmed;
 };
 
-export const AgentCreateModal = ({
-  open,
+const AgentCreateModalContent = ({
   suggestedName,
-  busy = false,
-  submitError = null,
+  busy,
+  submitError,
   onClose,
   onSubmit,
-}: AgentCreateModalProps) => {
-  const initialName = useMemo(() => resolveInitialName(suggestedName), [suggestedName]);
-  const [name, setName] = useState(initialName);
+}: Omit<AgentCreateModalProps, "open">) => {
+  const [name, setName] = useState(() => resolveInitialName(suggestedName));
   const [avatarSeed, setAvatarSeed] = useState(() => randomUUID());
-  const wasOpenRef = useRef(false);
-
-  useEffect(() => {
-    if (open && !wasOpenRef.current) {
-      setName(initialName);
-      setAvatarSeed(randomUUID());
-    }
-    wasOpenRef.current = open;
-  }, [initialName, open]);
 
   const canSubmit = name.trim().length > 0;
 
@@ -55,8 +44,6 @@ export const AgentCreateModal = ({
     if (!trimmedName) return;
     void onSubmit({ name: trimmedName, avatarSeed });
   };
-
-  if (!open) return null;
 
   return (
     <div
@@ -128,7 +115,7 @@ export const AgentCreateModal = ({
           </div>
 
           {submitError ? (
-            <div className="rounded-md border border-destructive/50 bg-destructive/12 px-3 py-2 text-xs text-destructive">
+            <div className="ui-alert-danger rounded-md px-3 py-2 text-xs">
               {submitError}
             </div>
           ) : null}
@@ -146,5 +133,25 @@ export const AgentCreateModal = ({
         </div>
       </form>
     </div>
+  );
+};
+
+export const AgentCreateModal = ({
+  open,
+  suggestedName,
+  busy = false,
+  submitError = null,
+  onClose,
+  onSubmit,
+}: AgentCreateModalProps) => {
+  if (!open) return null;
+  return (
+    <AgentCreateModalContent
+      suggestedName={suggestedName}
+      busy={busy}
+      submitError={submitError}
+      onClose={onClose}
+      onSubmit={onSubmit}
+    />
   );
 };

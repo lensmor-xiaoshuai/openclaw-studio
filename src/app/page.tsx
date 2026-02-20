@@ -77,7 +77,7 @@ import { deleteAgentViaStudio } from "@/features/agents/operations/deleteAgentOp
 import { performCronCreateFlow } from "@/features/agents/operations/cronCreateOperation";
 import { sendChatMessageViaStudio } from "@/features/agents/operations/chatSendOperation";
 import { hydrateAgentFleetFromGateway } from "@/features/agents/operations/agentFleetHydration";
-import { resolveConfigMutationStatusLine } from "@/features/agents/operations/configMutationWorkflow";
+import { resolveConfigMutationStatusLine } from "@/features/agents/operations/mutationLifecycleWorkflow";
 import { useConfigMutationQueue } from "@/features/agents/operations/useConfigMutationQueue";
 import { isLocalGatewayUrl } from "@/lib/gateway/local-gateway";
 import { shouldAwaitDisconnectRestartForRemoteMutation } from "@/lib/gateway/gatewayReloadMode";
@@ -109,8 +109,6 @@ import {
 import { createSpecialLatestUpdateOperation } from "@/features/agents/operations/specialLatestUpdateOperation";
 import {
   updateExecutionRoleViaStudio,
-} from "@/features/agents/operations/executionRoleUpdateOperation";
-import {
   updateAgentPermissionsViaStudio,
   resolveAgentPermissionsDraft,
   type AgentPermissionsDraft,
@@ -129,7 +127,7 @@ import {
 import {
   buildQueuedMutationBlock,
   resolveMutationStartGuard,
-} from "@/features/agents/operations/agentMutationLifecycleController";
+} from "@/features/agents/operations/mutationLifecycleWorkflow";
 import { runAgentConfigMutationLifecycle } from "@/features/agents/operations/agentConfigMutationLifecycleOperation";
 import {
   isCreateBlockTimedOut,
@@ -2381,7 +2379,7 @@ const AgentStudioPage = () => {
 
         {errorMessage ? (
           <div className="w-full">
-            <div className="rounded-md border border-destructive bg-destructive px-4 py-2 text-sm text-destructive-foreground">
+            <div className="ui-alert-danger rounded-md px-4 py-2 text-sm">
               {errorMessage}
             </div>
           </div>

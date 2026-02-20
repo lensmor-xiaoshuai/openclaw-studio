@@ -1,16 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
-
 import {
+  buildConfigMutationFailureMessage,
   buildMutationSideEffectCommands,
   buildQueuedMutationBlock,
-  resolveMutationStartGuard,
-} from "@/features/agents/operations/agentMutationLifecycleController";
-import {
+  resolveConfigMutationPostRunEffects,
   resolveConfigMutationStatusLine,
+  resolveMutationStartGuard,
   runConfigMutationWorkflow,
-} from "@/features/agents/operations/configMutationWorkflow";
+} from "@/features/agents/operations/mutationLifecycleWorkflow";
+import { shouldStartNextConfigMutation } from "@/features/agents/operations/configMutationGatePolicy";
 
-describe("agentMutationLifecycleController integration", () => {
+describe("mutationLifecycleWorkflow integration", () => {
   it("page create handler uses shared start guard and queued block shape", () => {
     const denied = resolveMutationStartGuard({
       status: "disconnected",
@@ -42,6 +42,53 @@ describe("agentMutationLifecycleController integration", () => {
       startedAt: 42,
       sawDisconnect: false,
     });
+  });
+
+  it("delete workflow maps awaiting-restart outcome to awaiting-restart block phase", async () => {
+    const result = await runConfigMutationWorkflow(
+      { kind: "delete-agent", isLocalGateway: false },
+      {
+        executeMutation: async () => undefined,
+        shouldAwaitRemoteRestart: async () => true,
+      }
+    );
+
+    const effects = resolveConfigMutationPostRunEffects(result);
+    expect(effects).toEqual({
+      shouldReloadAgents: false,
+      shouldClearBlock: false,
+      awaitingRestartPatch: {
+        phase: "awaiting-restart",
+        sawDisconnect: false,
+      },
+    });
+  });
+
+  it("rename workflow maps completed outcome to load-and-clear flow", async () => {
+    const result = await runConfigMutationWorkflow(
+      { kind: "rename-agent", isLocalGateway: false },
+      {
+        executeMutation: async () => undefined,
+        shouldAwaitRemoteRestart: async () => false,
+      }
+    );
+
+    const effects = resolveConfigMutationPostRunEffects(result);
+    let didLoadAgents = false;
+    let block: { phase: string; sawDisconnect: boolean } | null = {
+      phase: "mutating",
+      sawDisconnect: false,
+    };
+    if (effects.shouldReloadAgents) {
+      didLoadAgents = true;
+    }
+    if (effects.shouldClearBlock) {
+      block = null;
+    }
+
+    expect(didLoadAgents).toBe(true);
+    expect(block).toBeNull();
+    expect(effects.awaitingRestartPatch).toBeNull();
   });
 
   it("page rename and delete handlers share lifecycle guard plus post-run transitions", async () => {
@@ -139,6 +186,57 @@ describe("agentMutationLifecycleController integration", () => {
       sawDisconnect: false,
     });
     expect(commandLog).toEqual(["reload", "clear", "pane:chat", "patch:awaiting-restart"]);
+  });
+
+  it("workflow errors clear block and set page error message", async () => {
+    let block: { phase: string; sawDisconnect: boolean } | null = {
+      phase: "mutating",
+      sawDisconnect: false,
+    };
+    let errorMessage: string | null = null;
+
+    try {
+      await runConfigMutationWorkflow(
+        { kind: "rename-agent", isLocalGateway: false },
+        {
+          executeMutation: async () => {
+            throw new Error("rename exploded");
+          },
+          shouldAwaitRemoteRestart: async () => false,
+        }
+      );
+    } catch (error) {
+      block = null;
+      errorMessage = buildConfigMutationFailureMessage({
+        kind: "rename-agent",
+        error,
+      });
+    }
+
+    expect(block).toBeNull();
+    expect(errorMessage).toBe("rename exploded");
+  });
+
+  it("preserves queue gating when restart block is active", () => {
+    expect(
+      shouldStartNextConfigMutation({
+        status: "connected",
+        hasRunningAgents: false,
+        hasActiveMutation: false,
+        hasRestartBlockInProgress: true,
+        queuedCount: 1,
+      })
+    ).toBe(false);
+
+    expect(
+      shouldStartNextConfigMutation({
+        status: "connected",
+        hasRunningAgents: false,
+        hasActiveMutation: false,
+        hasRestartBlockInProgress: false,
+        queuedCount: 1,
+      })
+    ).toBe(true);
   });
 
   it("preserves lock-status text behavior across queued, mutating, and awaiting-restart phases", () => {

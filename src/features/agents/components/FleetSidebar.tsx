@@ -1,6 +1,11 @@
 import type { AgentState, FocusFilter } from "@/features/agents/state/store";
 import { useLayoutEffect, useMemo, useRef } from "react";
 import { AgentAvatar } from "./AgentAvatar";
+import {
+  NEEDS_APPROVAL_BADGE_CLASS,
+  resolveAgentStatusBadgeClass,
+  resolveAgentStatusLabel,
+} from "./colorSemantics";
 import { EmptyStatePanel } from "./EmptyStatePanel";
 
 type FleetSidebarProps = {
@@ -19,18 +24,6 @@ const FILTER_OPTIONS: Array<{ value: FocusFilter; label: string; testId: string 
   { value: "running", label: "Running", testId: "fleet-filter-running" },
   { value: "idle", label: "Idle", testId: "fleet-filter-idle" },
 ];
-
-const statusLabel: Record<AgentState["status"], string> = {
-  idle: "Idle",
-  running: "Running",
-  error: "Error",
-};
-
-const statusClassName: Record<AgentState["status"], string> = {
-  idle: "bg-muted/48 text-muted-foreground/70",
-  running: "border border-border/55 bg-accent/70 text-foreground",
-  error: "border border-destructive/35 bg-destructive/12 text-destructive",
-};
 
 export const FleetSidebar = ({
   agents,
@@ -133,13 +126,17 @@ export const FleetSidebar = ({
                   }}
                   type="button"
                   data-testid={`fleet-agent-row-${agent.agentId}`}
-                  className={`group ui-card flex w-full items-center gap-4 px-3 py-5 text-left transition ${
+                  className={`group relative ui-card flex w-full items-center gap-4 overflow-hidden border px-3 py-5 text-left transition-colors ${
                     selected
-                      ? "bg-surface-2 shadow-2xs"
-                      : "hover:bg-surface-2"
+                      ? "ui-card-selected"
+                      : "hover:bg-surface-2/70"
                   }`}
                   onClick={() => onSelectAgent(agent.agentId)}
                 >
+                  <span
+                    aria-hidden="true"
+                    className={`ui-card-select-indicator ${selected ? "opacity-100" : "opacity-0 group-hover:opacity-60"}`}
+                  />
                   <AgentAvatar
                     seed={avatarSeed}
                     name={agent.name}
@@ -153,14 +150,13 @@ export const FleetSidebar = ({
                     </p>
                     <div className="mt-3 flex flex-wrap items-center gap-3">
                       <span
-                        className={`ui-badge ${statusClassName[agent.status]} ${
-                          agent.status === "idle" ? "px-2 py-0.5 text-[11px] tracking-[0.03em]" : ""
-                        }`}
+                        className={`ui-badge ${resolveAgentStatusBadgeClass(agent.status)}`}
+                        data-status={agent.status}
                       >
-                        {statusLabel[agent.status]}
+                        {resolveAgentStatusLabel(agent.status)}
                       </span>
                       {agent.awaitingUserInput ? (
-                        <span className="ui-badge border border-amber-500/35 bg-amber-500/12 text-amber-700">
+                        <span className={`ui-badge ${NEEDS_APPROVAL_BADGE_CLASS}`} data-status="approval">
                           Needs approval
                         </span>
                       ) : null}

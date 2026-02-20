@@ -114,6 +114,10 @@ See `docs/pi-chat-streaming.md` for how Studio bridges browser WebSocket traffic
 
 See `docs/permissions-sandboxing.md` for how agent creation choices (tool policy, sandbox config, exec approvals) flow from Studio into the OpenClaw Gateway and how upstream OpenClaw enforces them at runtime (workspaces, sandbox mounts, tool availability, and exec approval prompts).
 
+## Color system
+
+See `docs/color-system.md` for the semantic color contract, status mappings, and guardrails that keep action/status/danger usage consistent across the UI.
+
 ## Troubleshooting
 
 If the UI loads but “Connect” fails, it’s usually Studio->Gateway:

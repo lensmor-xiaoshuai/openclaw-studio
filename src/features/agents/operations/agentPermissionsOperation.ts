@@ -224,33 +224,47 @@ export function resolveSessionExecSettingsForRole(params: {
   return { execHost, execSecurity: "allowlist", execAsk: "always" };
 }
 
-export async function updateAgentPermissionsViaStudio(params: {
-  client: GatewayClient;
-  agentId: string;
-  sessionKey: string;
-  draft: AgentPermissionsDraft;
-  loadAgents?: () => Promise<void>;
-}): Promise<void> {
-  const agentId = params.agentId.trim();
-  if (!agentId) {
-    throw new Error("Agent id is required.");
+export function resolveRuntimeToolOverridesForRole(params: {
+  role: ExecutionRoleId;
+  existingTools: unknown;
+}): { tools: { allow?: string[]; alsoAllow?: string[]; deny?: string[] } } {
+  const tools = isRecord(params.existingTools) ? params.existingTools : null;
+
+  const existingAllow = coerceStringArray(tools?.allow);
+  const existingAlsoAllow = coerceStringArray(tools?.alsoAllow);
+  const existingDeny = coerceStringArray(tools?.deny) ?? [];
+
+  const usesAllow = existingAllow !== null;
+  const baseAllowed = new Set(usesAllow ? existingAllow : existingAlsoAllow ?? []);
+  const deny = new Set(existingDeny);
+
+  if (params.role === "conservative") {
+    baseAllowed.delete("group:runtime");
+    deny.add("group:runtime");
+  } else {
+    baseAllowed.add("group:runtime");
+    deny.delete("group:runtime");
   }
 
-  const role = resolveRoleForCommandMode(params.draft.commandMode);
+  const allowedList = Array.from(baseAllowed);
+  const denyList = Array.from(deny).filter((entry) => !baseAllowed.has(entry));
 
-  const existingPolicy = await readGatewayAgentExecApprovals({
-    client: params.client,
-    agentId,
-  });
-  const allowlist = existingPolicy?.allowlist ?? [];
-  const nextPolicy = resolveExecApprovalsPolicyForRole({ role, allowlist });
+  return {
+    tools: usesAllow
+      ? { allow: allowedList, deny: denyList }
+      : { alsoAllow: allowedList, deny: denyList },
+  };
+}
 
-  await upsertGatewayAgentExecApprovals({
-    client: params.client,
-    agentId,
-    policy: nextPolicy,
-  });
+type AgentRuntimeConfigContext = {
+  sandboxMode: string;
+  tools: Record<string, unknown> | null;
+};
 
+const resolveAgentRuntimeConfigContext = async (params: {
+  client: GatewayClient;
+  agentId: string;
+}): Promise<AgentRuntimeConfigContext> => {
   const snapshot = await params.client.call<{ config?: unknown }>("config.get", {});
   const baseConfig =
     snapshot.config && typeof snapshot.config === "object" && !Array.isArray(snapshot.config)
@@ -258,7 +272,7 @@ export async function updateAgentPermissionsViaStudio(params: {
       : undefined;
 
   const list = readConfigAgentList(baseConfig);
-  const configEntry = list.find((entry) => entry.id === agentId) ?? null;
+  const configEntry = list.find((entry) => entry.id === params.agentId) ?? null;
 
   const sandboxRaw =
     configEntry && typeof (configEntry as Record<string, unknown>).sandbox === "object"
@@ -279,8 +293,56 @@ export async function updateAgentPermissionsViaStudio(params: {
       ? (toolsRaw as Record<string, unknown>)
       : null;
 
+  return {
+    sandboxMode,
+    tools,
+  };
+};
+
+const upsertExecApprovalsPolicyForRole = async (params: {
+  client: GatewayClient;
+  agentId: string;
+  role: ExecutionRoleId;
+}) => {
+  const existingPolicy = await readGatewayAgentExecApprovals({
+    client: params.client,
+    agentId: params.agentId,
+  });
+  const allowlist = existingPolicy?.allowlist ?? [];
+  const nextPolicy = resolveExecApprovalsPolicyForRole({ role: params.role, allowlist });
+
+  await upsertGatewayAgentExecApprovals({
+    client: params.client,
+    agentId: params.agentId,
+    policy: nextPolicy,
+  });
+};
+
+export async function updateAgentPermissionsViaStudio(params: {
+  client: GatewayClient;
+  agentId: string;
+  sessionKey: string;
+  draft: AgentPermissionsDraft;
+  loadAgents?: () => Promise<void>;
+}): Promise<void> {
+  const agentId = params.agentId.trim();
+  if (!agentId) {
+    throw new Error("Agent id is required.");
+  }
+
+  const role = resolveRoleForCommandMode(params.draft.commandMode);
+  await upsertExecApprovalsPolicyForRole({
+    client: params.client,
+    agentId,
+    role,
+  });
+  const runtimeConfigContext = await resolveAgentRuntimeConfigContext({
+    client: params.client,
+    agentId,
+  });
+
   const toolOverrides = resolveToolGroupOverrides({
-    existingTools: tools,
+    existingTools: runtimeConfigContext.tools,
     runtimeEnabled: role !== "conservative",
     webEnabled: params.draft.webAccess,
     fsEnabled: params.draft.fileTools,
@@ -294,7 +356,7 @@ export async function updateAgentPermissionsViaStudio(params: {
 
   const execSettings = resolveSessionExecSettingsForRole({
     role,
-    sandboxMode,
+    sandboxMode: runtimeConfigContext.sandboxMode,
   });
   await syncGatewaySessionSettings({
     client: params.client,
@@ -307,4 +369,51 @@ export async function updateAgentPermissionsViaStudio(params: {
   if (params.loadAgents) {
     await params.loadAgents();
   }
+}
+
+export async function updateExecutionRoleViaStudio(params: {
+  client: GatewayClient;
+  agentId: string;
+  sessionKey: string;
+  role: ExecutionRoleId;
+  loadAgents: () => Promise<void>;
+}): Promise<void> {
+  const agentId = params.agentId.trim();
+  if (!agentId) {
+    throw new Error("Agent id is required.");
+  }
+
+  await upsertExecApprovalsPolicyForRole({
+    client: params.client,
+    agentId,
+    role: params.role,
+  });
+  const runtimeConfigContext = await resolveAgentRuntimeConfigContext({
+    client: params.client,
+    agentId,
+  });
+
+  const toolOverrides = resolveRuntimeToolOverridesForRole({
+    role: params.role,
+    existingTools: runtimeConfigContext.tools,
+  });
+  await updateGatewayAgentOverrides({
+    client: params.client,
+    agentId,
+    overrides: toolOverrides,
+  });
+
+  const execSettings = resolveSessionExecSettingsForRole({
+    role: params.role,
+    sandboxMode: runtimeConfigContext.sandboxMode,
+  });
+  await syncGatewaySessionSettings({
+    client: params.client,
+    sessionKey: params.sessionKey,
+    execHost: execSettings.execHost,
+    execSecurity: execSettings.execSecurity,
+    execAsk: execSettings.execAsk,
+  });
+
+  await params.loadAgents();
 }

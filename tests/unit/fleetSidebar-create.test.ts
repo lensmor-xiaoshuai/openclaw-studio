@@ -1,6 +1,6 @@
 import { createElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import type { AgentState } from "@/features/agents/state/store";
 import { FleetSidebar } from "@/features/agents/components/FleetSidebar";
 
@@ -105,6 +105,27 @@ describe("FleetSidebar new agent action", () => {
       })
     );
 
-    expect(screen.getByText("Needs approval")).toBeInTheDocument();
+    const approvalBadge = screen.getByText("Needs approval");
+    expect(approvalBadge).toBeInTheDocument();
+    expect(approvalBadge).toHaveClass("ui-badge-approval");
+    expect(approvalBadge).toHaveAttribute("data-status", "approval");
+  });
+
+  it("renders semantic class and status marker for agent status badge", () => {
+    render(
+      createElement(FleetSidebar, {
+        agents: [{ ...createAgent(), status: "running" }],
+        selectedAgentId: "agent-1",
+        filter: "all",
+        onFilterChange: vi.fn(),
+        onSelectAgent: vi.fn(),
+        onCreateAgent: vi.fn(),
+      })
+    );
+
+    const row = screen.getByTestId("fleet-agent-row-agent-1");
+    const statusBadge = within(row).getByText("Running");
+    expect(statusBadge).toHaveAttribute("data-status", "running");
+    expect(statusBadge).toHaveClass("ui-badge-status-running");
   });
 });

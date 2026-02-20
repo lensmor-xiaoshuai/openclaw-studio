@@ -2,8 +2,8 @@ import {
   buildConfigMutationFailureMessage,
   runConfigMutationWorkflow,
   type MutationWorkflowKind,
-} from "@/features/agents/operations/configMutationWorkflow";
-import { buildMutationSideEffectCommands } from "@/features/agents/operations/agentMutationLifecycleController";
+  buildMutationSideEffectCommands,
+} from "@/features/agents/operations/mutationLifecycleWorkflow";
 import type { ConfigMutationKind } from "@/features/agents/operations/useConfigMutationQueue";
 
 export type AgentConfigMutationLifecycleKind = MutationWorkflowKind;

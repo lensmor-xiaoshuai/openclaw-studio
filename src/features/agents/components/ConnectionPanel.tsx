@@ -1,5 +1,6 @@
 import type { GatewayStatus } from "@/lib/gateway/GatewayClient";
 import { X } from "lucide-react";
+import { resolveGatewayStatusBadgeClass, resolveGatewayStatusLabel } from "./colorSemantics";
 
 type ConnectionPanelProps = {
   gatewayUrl: string;
@@ -13,21 +14,6 @@ type ConnectionPanelProps = {
   onClose?: () => void;
 };
 
-const statusStyles: Record<GatewayStatus, { label: string; className: string }> = {
-  disconnected: {
-    label: "Disconnected",
-    className: "ui-chip border-border/70 bg-muted px-3 py-1 text-muted-foreground",
-  },
-  connecting: {
-    label: "Connecting",
-    className: "ui-chip border-border/70 bg-secondary px-3 py-1 text-secondary-foreground",
-  },
-  connected: {
-    label: "Connected",
-    className: "ui-chip border-primary/30 bg-primary/15 px-3 py-1 text-foreground",
-  },
-};
-
 export const ConnectionPanel = ({
   gatewayUrl,
   token,
@@ -39,7 +25,6 @@ export const ConnectionPanel = ({
   onDisconnect,
   onClose,
 }: ConnectionPanelProps) => {
-  const statusConfig = statusStyles[status];
   const isConnected = status === "connected";
   const isConnecting = status === "connecting";
 
@@ -48,9 +33,10 @@ export const ConnectionPanel = ({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-3">
           <span
-            className={`inline-flex items-center font-mono text-[10px] font-semibold tracking-[0.08em] ${statusConfig.className}`}
+            className={`ui-chip inline-flex items-center px-3 py-1 font-mono text-[10px] font-semibold tracking-[0.08em] ${resolveGatewayStatusBadgeClass(status)}`}
+            data-status={status}
           >
-            {statusConfig.label}
+            {resolveGatewayStatusLabel(status)}
           </span>
           <button
             className="ui-btn-secondary px-4 py-2 text-xs font-semibold tracking-[0.05em] text-foreground disabled:cursor-not-allowed disabled:opacity-60"
@@ -99,7 +85,7 @@ export const ConnectionPanel = ({
         </label>
       </div>
       {error ? (
-        <p className="rounded-md border border-destructive bg-destructive px-4 py-2 text-sm text-destructive-foreground">
+        <p className="ui-alert-danger rounded-md px-4 py-2 text-sm">
           {error}
         </p>
       ) : null}

@@ -65,6 +65,12 @@ export const GatewayConnectScreen = ({
   const hidePaths = status === "connecting" && isLocal;
   const connectDisabled = status === "connecting";
   const connectLabel = connectDisabled ? "Connecting…" : "Connect";
+  const statusDotClass =
+    status === "connected"
+      ? "ui-dot-status-connected"
+      : status === "connecting"
+        ? "ui-dot-status-connecting"
+        : "ui-dot-status-disconnected";
 
   const copyLocalCommand = async () => {
     try {
@@ -79,13 +85,13 @@ export const GatewayConnectScreen = ({
 
   const commandField = (
       <div className="space-y-1.5">
-        <div className="flex items-center gap-2 rounded-md border border-zinc-700/70 bg-zinc-900/95 px-3 py-2">
-        <code className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap font-mono text-[12px] text-zinc-100">
+        <div className="ui-command-surface flex items-center gap-2 rounded-md px-3 py-2">
+        <code className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap font-mono text-[12px]">
           {localGatewayCommand}
         </code>
         <button
           type="button"
-          className="ui-btn-icon h-7 w-7 shrink-0 border-zinc-600/80 bg-zinc-800 text-zinc-100 hover:bg-zinc-700"
+          className="ui-btn-icon ui-command-copy h-7 w-7 shrink-0"
           onClick={copyLocalCommand}
           aria-label="Copy local gateway command"
           title="Copy command"
@@ -96,7 +102,7 @@ export const GatewayConnectScreen = ({
       {copyStatus === "copied" ? (
         <p className="text-xs text-muted-foreground">Copied</p>
       ) : copyStatus === "failed" ? (
-        <p className="text-xs text-destructive">Could not copy command.</p>
+        <p className="ui-text-danger text-xs">Could not copy command.</p>
       ) : (
         <p className="text-xs leading-snug text-muted-foreground">
           In a source checkout, use <span className="font-mono">{localGatewayCommandPnpm}</span>.
@@ -169,7 +175,7 @@ export const GatewayConnectScreen = ({
           Connecting…
         </p>
       ) : null}
-      {error ? <p className="text-xs leading-snug text-destructive">{error}</p> : null}
+      {error ? <p className="ui-text-danger text-xs leading-snug">{error}</p> : null}
     </div>
   );
 
@@ -178,10 +184,10 @@ export const GatewayConnectScreen = ({
       <div className="ui-card px-4 py-2">
         <div className="flex items-center gap-2">
           {status === "connecting" ? (
-            <Loader2 className="h-4 w-4 animate-spin text-primary" />
+            <Loader2 className="h-4 w-4 animate-spin text-[color:var(--status-connecting-fg)]" />
           ) : (
             <span
-              className={`h-2.5 w-2.5 rounded-full ${isLocal ? "bg-destructive" : "bg-amber-500"}`}
+              className={`h-2.5 w-2.5 ${statusDotClass}`}
             />
           )}
           <p className="text-sm font-semibold text-foreground">{statusCopy}</p>
@@ -214,7 +220,7 @@ export const GatewayConnectScreen = ({
                 Connecting…
               </p>
             ) : null}
-            {error ? <p className="text-xs leading-snug text-destructive">{error}</p> : null}
+            {error ? <p className="ui-text-danger text-xs leading-snug">{error}</p> : null}
           </div>
 
           <div className="ui-card px-4 py-3.5 sm:px-6 sm:py-4">
@@ -223,7 +229,7 @@ export const GatewayConnectScreen = ({
               className="ui-btn-secondary flex h-9 w-full items-center justify-between px-3 py-2 text-left font-mono text-[10px] font-medium tracking-[0.06em] text-muted-foreground"
               onClick={() => setRemoteExpanded((prev) => !prev)}
             >
-              Remote gateway
+              Remote Gateway
               {remoteExpanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
             </button>
             {remoteExpanded ? remoteForm : null}
@@ -247,7 +253,7 @@ export const GatewayConnectScreen = ({
               className="ui-btn-secondary flex h-9 w-full items-center justify-between px-3 py-2 text-left font-mono text-[10px] font-medium tracking-[0.06em] text-muted-foreground"
               onClick={() => setLocalExpanded((prev) => !prev)}
             >
-              Run locally
+              Run Locally
               {localExpanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
             </button>
             {localExpanded ? (

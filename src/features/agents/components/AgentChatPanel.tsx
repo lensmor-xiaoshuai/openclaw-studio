@@ -29,6 +29,10 @@ import {
   type AssistantTraceEvent,
   type AgentChatItem,
 } from "./chatItems";
+import {
+  resolveAgentStatusBadgeClass,
+  resolveAgentStatusLabel,
+} from "./colorSemantics";
 import { EmptyStatePanel } from "./EmptyStatePanel";
 
 const formatChatTimestamp = (timestampMs: number): string => {
@@ -125,10 +129,10 @@ const ExecApprovalCard = memo(function ExecApprovalCard({
   const disabled = approval.resolving || !onResolve;
   return (
     <div
-      className={`w-full ${ASSISTANT_MAX_WIDTH_EXPANDED_CLASS} ${ASSISTANT_GUTTER_CLASS} self-start rounded-md bg-amber-500/12 px-3 py-2 shadow-2xs`}
+      className={`w-full ${ASSISTANT_MAX_WIDTH_EXPANDED_CLASS} ${ASSISTANT_GUTTER_CLASS} ui-badge-approval self-start rounded-md px-3 py-2 shadow-2xs`}
       data-testid={`exec-approval-card-${approval.id}`}
     >
-      <div className="type-meta text-amber-800">
+      <div className="type-meta">
         Exec approval required
       </div>
       <div className="mt-2 rounded-md bg-surface-3 px-2 py-1.5 shadow-2xs">
@@ -140,7 +144,7 @@ const ExecApprovalCard = memo(function ExecApprovalCard({
         {approval.cwd ? <div className="sm:col-span-2">CWD: {approval.cwd}</div> : null}
       </div>
       {approval.error ? (
-        <div className="mt-2 rounded-md bg-destructive/12 px-2 py-1 text-[11px] text-destructive shadow-2xs">
+        <div className="ui-alert-danger mt-2 rounded-md px-2 py-1 text-[11px] shadow-2xs">
           {approval.error}
         </div>
       ) : null}
@@ -165,7 +169,7 @@ const ExecApprovalCard = memo(function ExecApprovalCard({
         </button>
         <button
           type="button"
-          className="rounded-md border border-destructive/35 bg-destructive/12 px-2.5 py-1 font-mono text-[12px] font-medium tracking-[0.02em] text-destructive transition hover:bg-destructive/20 disabled:cursor-not-allowed disabled:opacity-60"
+          className="ui-btn-danger rounded-md px-2.5 py-1 font-mono text-[12px] font-medium tracking-[0.02em] transition disabled:cursor-not-allowed disabled:opacity-60"
           onClick={() => onResolve?.(approval.id, "deny")}
           disabled={disabled}
           aria-label={`Deny exec approval ${approval.id}`}
@@ -248,7 +252,7 @@ const ThinkingDetailsRow = memo(function ThinkingDetailsRow({
   return (
     <details
       open={open}
-      className="group rounded-md bg-surface-2 px-2 py-1.5 text-[10px] text-muted-foreground/80 shadow-2xs"
+      className="ui-chat-thinking group rounded-md px-2 py-1.5 text-[10px] shadow-2xs"
     >
       <summary
         className="flex cursor-pointer list-none items-center gap-2 opacity-65 [&::-webkit-details-marker]:hidden"
@@ -291,7 +295,7 @@ const ThinkingDetailsRow = memo(function ThinkingDetailsRow({
               <ToolCallDetails
                 key={`thinking-tool-${index}-${event.text.slice(0, 48)}`}
                 line={event.text}
-                className="rounded-md bg-surface-3 px-2 py-1 text-[10px] text-muted-foreground shadow-2xs"
+                className="rounded-md border border-border/45 bg-surface-2/65 px-2 py-1 text-[10px] text-muted-foreground/90 shadow-2xs"
               />
             )
           )}
@@ -309,7 +313,7 @@ const UserMessageCard = memo(function UserMessageCard({
   timestampMs?: number;
 }) {
   return (
-    <div className="w-full max-w-[70ch] self-end overflow-hidden rounded-md bg-[color:var(--chat-user-bg)] shadow-2xs">
+    <div className="ui-chat-user-card w-full max-w-[70ch] self-end overflow-hidden rounded-md bg-[color:var(--chat-user-bg)]">
       <div className="flex items-center justify-between gap-3 bg-[color:var(--chat-user-header-bg)] px-3 py-2">
         <div className="type-meta min-w-0 truncate font-mono text-foreground/90">
           You
@@ -426,36 +430,38 @@ const AssistantMessageCard = memo(function AssistantMessageCard({
             ) : null}
 
             {contentText ? (
-              streaming ? (
-                (() => {
-                  if (!contentText.includes("MEDIA:")) {
+              <div className="ui-chat-assistant-card">
+                {streaming ? (
+                  (() => {
+                    if (!contentText.includes("MEDIA:")) {
+                      return (
+                        <div className="whitespace-pre-wrap break-words text-foreground">
+                          {contentText}
+                        </div>
+                      );
+                    }
+                    const rewritten = rewriteMediaLinesToMarkdown(contentText);
+                    if (!rewritten.includes("![](")) {
+                      return (
+                        <div className="whitespace-pre-wrap break-words text-foreground">
+                          {contentText}
+                        </div>
+                      );
+                    }
                     return (
-                      <div className="whitespace-pre-wrap break-words text-foreground">
-                        {contentText}
+                      <div className="agent-markdown text-foreground">
+                        <ReactMarkdown remarkPlugins={[remarkGfm]}>{rewritten}</ReactMarkdown>
                       </div>
                     );
-                  }
-                  const rewritten = rewriteMediaLinesToMarkdown(contentText);
-                  if (!rewritten.includes("![](")) {
-                    return (
-                      <div className="whitespace-pre-wrap break-words text-foreground">
-                        {contentText}
-                      </div>
-                    );
-                  }
-                  return (
-                    <div className="agent-markdown text-foreground">
-                      <ReactMarkdown remarkPlugins={[remarkGfm]}>{rewritten}</ReactMarkdown>
-                    </div>
-                  );
-                })()
-              ) : (
-                <div className="agent-markdown text-foreground">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                    {rewriteMediaLinesToMarkdown(contentText)}
-                  </ReactMarkdown>
-                </div>
-              )
+                  })()
+                ) : (
+                  <div className="agent-markdown text-foreground">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                      {rewriteMediaLinesToMarkdown(contentText)}
+                    </ReactMarkdown>
+                  </div>
+                )}
+              </div>
             ) : null}
           </div>
         )}
@@ -668,7 +674,7 @@ const AgentChatTranscript = memo(function AgentChatTranscript({
       <div
         ref={chatRef}
         data-testid="agent-chat-scroll"
-        className={`h-full overflow-auto p-4 sm:p-5 ${showJumpToLatest ? "pb-20" : ""}`}
+        className={`ui-chat-scroll h-full overflow-auto p-4 sm:p-5 ${showJumpToLatest ? "pb-20" : ""}`}
         onScroll={() => updatePinnedFromScroll()}
         onWheel={(event) => {
           event.stopPropagation();
@@ -806,7 +812,7 @@ const AgentChatComposer = memo(function AgentChatComposer({
         </span>
       ) : null}
       <button
-        className="rounded-md border border-transparent bg-primary px-3 py-2 font-mono text-[12px] font-medium tracking-[0.02em] text-primary-foreground transition hover:brightness-105 disabled:cursor-not-allowed disabled:border-border disabled:bg-muted disabled:text-muted-foreground"
+        className="ui-btn-primary ui-btn-send rounded-[7px] px-3 py-2 font-mono text-[12px] font-medium tracking-[0.02em] disabled:cursor-not-allowed disabled:border-border disabled:bg-muted disabled:text-muted-foreground"
         type="button"
         onClick={onSend}
         disabled={sendDisabled}
@@ -909,18 +915,8 @@ export const AgentChatPanel = ({
     [agent.status, canSend, onDraftChange, onSend]
   );
 
-  const statusColor =
-    agent.status === "running"
-      ? "border border-border/55 bg-accent/70 text-foreground"
-      : agent.status === "error"
-        ? "border border-destructive/35 bg-destructive/12 text-destructive"
-        : "border border-border/70 bg-muted text-muted-foreground";
-  const statusLabel =
-    agent.status === "running"
-      ? "Running"
-      : agent.status === "error"
-        ? "Error"
-        : "Idle";
+  const statusClassName = resolveAgentStatusBadgeClass(agent.status);
+  const statusLabel = resolveAgentStatusLabel(agent.status);
 
   const chatItems = useMemo(
     () =>
@@ -1025,7 +1021,8 @@ export const AgentChatPanel = ({
                   •
                 </span>
                 <span
-                  className={`ui-badge shrink-0 ${statusColor}`}
+                  className={`ui-badge shrink-0 ${statusClassName}`}
+                  data-status={agent.status}
                 >
                   {statusLabel}
                 </span>
@@ -1035,7 +1032,7 @@ export const AgentChatPanel = ({
                 <label className="flex min-w-0 flex-col gap-1 font-mono text-[12px] font-medium tracking-[0.02em] text-muted-foreground">
                   <span>Model</span>
                   <select
-                    className="ui-input h-8 w-full min-w-0 overflow-hidden text-ellipsis whitespace-nowrap rounded-md px-2 text-[11px] font-semibold text-foreground"
+                    className="ui-input ui-control-important h-8 w-full min-w-0 overflow-hidden text-ellipsis whitespace-nowrap rounded-md px-2 text-[11px] font-semibold text-foreground"
                     aria-label="Model"
                     value={modelValue}
                     onChange={(event) => {
@@ -1057,7 +1054,7 @@ export const AgentChatPanel = ({
                   <label className="flex flex-col gap-1 font-mono text-[12px] font-medium tracking-[0.02em] text-muted-foreground">
                     <span>Thinking</span>
                     <select
-                      className="ui-input h-8 rounded-md px-2 text-[11px] font-semibold text-foreground"
+                      className="ui-input ui-control-important h-8 rounded-md px-2 text-[11px] font-semibold text-foreground"
                       aria-label="Thinking"
                       value={agent.thinkingLevel ?? ""}
                       onChange={(event) => {

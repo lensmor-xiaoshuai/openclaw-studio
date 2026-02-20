@@ -106,6 +106,52 @@ describe("AgentChatPanel controls", () => {
     expect(onOpenBrain).toHaveBeenCalledTimes(1);
   });
 
+  it("renders semantic status badge markers for idle and running states", () => {
+    const { rerender, container } = render(
+      createElement(AgentChatPanel, {
+        agent: createAgent(),
+        isSelected: true,
+        canSend: true,
+        models,
+        stopBusy: false,
+        onLoadMoreHistory: vi.fn(),
+        onOpenSettings: vi.fn(),
+        onModelChange: vi.fn(),
+        onThinkingChange: vi.fn(),
+        onDraftChange: vi.fn(),
+        onSend: vi.fn(),
+        onStopRun: vi.fn(),
+        onAvatarShuffle: vi.fn(),
+      })
+    );
+
+    const idleBadge = container.querySelector('[data-status="idle"]');
+    expect(idleBadge).not.toBeNull();
+    expect(idleBadge).toHaveClass("ui-badge-status-idle");
+
+    rerender(
+      createElement(AgentChatPanel, {
+        agent: { ...createAgent(), status: "running" },
+        isSelected: true,
+        canSend: true,
+        models,
+        stopBusy: false,
+        onLoadMoreHistory: vi.fn(),
+        onOpenSettings: vi.fn(),
+        onModelChange: vi.fn(),
+        onThinkingChange: vi.fn(),
+        onDraftChange: vi.fn(),
+        onSend: vi.fn(),
+        onStopRun: vi.fn(),
+        onAvatarShuffle: vi.fn(),
+      })
+    );
+
+    const runningBadge = container.querySelector('[data-status="running"]');
+    expect(runningBadge).not.toBeNull();
+    expect(runningBadge).toHaveClass("ui-badge-status-running");
+  });
+
   it("invokes_on_model_change_when_model_select_changes", () => {
     const onModelChange = vi.fn();
     render(

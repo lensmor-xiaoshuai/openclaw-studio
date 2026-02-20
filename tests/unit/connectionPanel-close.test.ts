@@ -45,4 +45,40 @@ describe("ConnectionPanel close control", () => {
 
     expect(screen.queryByTestId("gateway-connection-close")).not.toBeInTheDocument();
   });
+
+  it("renders semantic gateway status class markers", () => {
+    const { rerender } = render(
+      createElement(ConnectionPanel, {
+        gatewayUrl: "ws://127.0.0.1:18789",
+        token: "token",
+        status: "disconnected",
+        error: null,
+        onGatewayUrlChange: vi.fn(),
+        onTokenChange: vi.fn(),
+        onConnect: vi.fn(),
+        onDisconnect: vi.fn(),
+      })
+    );
+
+    const disconnected = screen.getByText("Disconnected");
+    expect(disconnected).toHaveAttribute("data-status", "disconnected");
+    expect(disconnected).toHaveClass("ui-badge-status-disconnected");
+
+    rerender(
+      createElement(ConnectionPanel, {
+        gatewayUrl: "ws://127.0.0.1:18789",
+        token: "token",
+        status: "connected",
+        error: null,
+        onGatewayUrlChange: vi.fn(),
+        onTokenChange: vi.fn(),
+        onConnect: vi.fn(),
+        onDisconnect: vi.fn(),
+      })
+    );
+
+    const connected = screen.getByText("Connected");
+    expect(connected).toHaveAttribute("data-status", "connected");
+    expect(connected).toHaveClass("ui-badge-status-connected");
+  });
 });

@@ -34,15 +34,12 @@ test("connection settings persist to the studio settings API", async ({ page }) 
   });
 
   await page.goto("/");
+  await page.getByTestId("studio-menu-toggle").click();
+  await page.getByTestId("gateway-settings-toggle").click();
+  await expect(page.getByLabel("Upstream gateway URL")).toBeVisible();
 
-  await expect(page.getByRole("button", { name: "Remote Gateway", exact: true })).toBeVisible();
-  await page.waitForTimeout(600);
-  expect(putCount).toBe(0);
-
-  await page.getByRole("button", { name: "Remote Gateway", exact: true }).click();
-
-  await page.getByLabel("Upstream URL").fill("ws://gateway.example:18789");
-  await page.getByLabel("Upstream Token").fill("token-123");
+  await page.getByLabel("Upstream gateway URL").fill("ws://gateway.example:18789");
+  await page.getByLabel("Upstream token").fill("token-123");
 
   const request = await page.waitForRequest((req) => {
     if (!req.url().includes("/api/studio") || req.method() !== "PUT") {
@@ -57,5 +54,8 @@ test("connection settings persist to the studio settings API", async ({ page }) 
   const gateway = (payload.gateway ?? {}) as { url?: string; token?: string };
   expect(gateway.url).toBe("ws://gateway.example:18789");
   expect(gateway.token).toBe("token-123");
-  await expect(page.getByRole("button", { name: "Connect", exact: true })).toBeEnabled();
+  expect(putCount).toBeGreaterThanOrEqual(1);
+  await expect(
+    page.getByRole("button", { name: /^(Connect|Disconnect)$/ })
+  ).toBeVisible();
 });

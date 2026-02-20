@@ -6,8 +6,8 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  --neutral-tint-rgb: rgb(80 138 150);
-  --neutral-tint: #508a96;
+  --neutral-tint-rgb: rgb(90 132 154);
+  --neutral-tint: #5a849a;
   --background: #f7f9fc;
   --foreground: rgb(27 33 43);
   --card: #ffffff;
@@ -40,12 +40,12 @@
   --sidebar-accent-foreground: var(--accent-foreground);
   --sidebar-border: color-mix(in srgb, var(--neutral-tint-rgb) 16%, transparent);
   --sidebar-ring: oklch(0.56 0.1 214);
-  --sidebar-card-bg: color-mix(in srgb, var(--neutral-tint-rgb) 7.2%, transparent);
-  --sidebar-card-border: color-mix(in srgb, var(--neutral-tint-rgb) 16%, transparent);
-  --sidebar-input-bg: color-mix(in srgb, var(--neutral-tint-rgb) 11%, transparent);
-  --sidebar-input-border: color-mix(in srgb, var(--neutral-tint-rgb) 24%, transparent);
+  --sidebar-card-bg: color-mix(in srgb, var(--neutral-tint-rgb) 6%, transparent);
+  --sidebar-card-border: color-mix(in srgb, var(--neutral-tint-rgb) 20%, transparent);
+  --sidebar-input-bg: color-mix(in srgb, var(--neutral-tint-rgb) 9%, transparent);
+  --sidebar-input-border: color-mix(in srgb, var(--neutral-tint-rgb) 26%, transparent);
   --sidebar-control-off: color-mix(in srgb, var(--neutral-tint-rgb) 12%, transparent);
-  --sidebar-control-on: var(--primary);
+  --sidebar-control-on: color-mix(in oklch, var(--primary) 74%, var(--surface-2));
   --radius: 1rem;
   --radius-small: 8px;
   --radius-card: 16px;
@@ -69,22 +69,58 @@
   --space-8: 32px;
   --space-12: 48px;
   --tracking-normal: 0.005em;
-  --panel: var(--surface-1);
-  --panel-border: color-mix(in srgb, var(--neutral-tint-rgb) 16%, transparent);
+  --panel: color-mix(in oklch, var(--surface-1) 96%, white 4%);
+  --panel-border: color-mix(in srgb, var(--neutral-tint-rgb) 20%, transparent);
   --surface-0: var(--background);
   --surface-1: var(--card);
-  --surface-2: color-mix(in srgb, var(--neutral-tint-rgb) 11%, transparent);
-  --surface-3: color-mix(in srgb, var(--neutral-tint-rgb) 16%, transparent);
+  --surface-2: color-mix(in srgb, var(--neutral-tint-rgb) 8%, transparent);
+  --surface-3: color-mix(in srgb, var(--neutral-tint-rgb) 14%, transparent);
   --surface-selected: color-mix(in srgb, var(--neutral-tint-rgb) 20%, transparent);
-  --surface-selected-border: color-mix(in srgb, var(--neutral-tint-rgb) 24%, transparent);
-  --chat-user-bg: color-mix(in srgb, var(--neutral-tint-rgb) 15%, transparent);
-  --chat-user-header-bg: color-mix(in srgb, var(--neutral-tint-rgb) 20%, transparent);
+  --surface-selected-border: color-mix(in srgb, var(--neutral-tint-rgb) 34%, transparent);
+  --chat-surface-bg: color-mix(in oklch, var(--surface-1) 92%, white 8%);
+  --chat-user-bg: color-mix(in srgb, var(--neutral-tint-rgb) 8%, transparent);
+  --chat-user-header-bg: color-mix(in srgb, var(--neutral-tint-rgb) 12%, transparent);
+  --action-bg: color-mix(in oklch, var(--primary) 92%, white 8%);
+  --action-bg-hover: color-mix(in oklch, var(--primary) 88%, white 12%);
+  --action-border: color-mix(in oklch, var(--primary) 52%, var(--border));
+  --action-fg: var(--primary-foreground);
+  --danger-soft-bg: color-mix(in oklch, var(--destructive) 13%, transparent);
+  --danger-soft-border: color-mix(in oklch, var(--destructive) 34%, transparent);
+  --danger-soft-fg: color-mix(in oklch, var(--destructive) 78%, black 22%);
+  --status-idle-bg: color-mix(in oklch, var(--surface-3) 86%, transparent);
+  --status-idle-border: color-mix(in oklch, var(--border) 74%, transparent);
+  --status-idle-fg: color-mix(in oklch, var(--foreground) 72%, var(--muted-foreground) 28%);
+  --status-running-bg: color-mix(in oklch, #1ea465 16%, transparent);
+  --status-running-border: color-mix(in oklch, #1b8f59 38%, transparent);
+  --status-running-fg: color-mix(in oklch, #0e6a40 72%, black 28%);
+  --status-error-bg: var(--danger-soft-bg);
+  --status-error-border: var(--danger-soft-border);
+  --status-error-fg: var(--danger-soft-fg);
+  --status-connecting-bg: color-mix(in oklch, #b97811 16%, transparent);
+  --status-connecting-border: color-mix(in oklch, #9f660f 36%, transparent);
+  --status-connecting-fg: color-mix(in oklch, #6a4100 78%, black 22%);
+  --status-connected-bg: color-mix(in oklch, #21888f 18%, transparent);
+  --status-connected-border: color-mix(in oklch, #1b7277 38%, transparent);
+  --status-connected-fg: color-mix(in oklch, #15585c 78%, black 22%);
+  --status-disconnected-bg: var(--status-idle-bg);
+  --status-disconnected-border: var(--status-idle-border);
+  --status-disconnected-fg: var(--status-idle-fg);
+  --status-approval-bg: color-mix(in oklch, #a77113 16%, transparent);
+  --status-approval-border: color-mix(in oklch, #8f6011 34%, transparent);
+  --status-approval-fg: color-mix(in oklch, #6a4504 82%, black 18%);
+  --command-bg: color-mix(in oklch, #081018 88%, var(--surface-1));
+  --command-border: color-mix(in oklch, #344d5e 62%, transparent);
+  --command-fg: rgb(234 242 248 / 0.98);
+  --command-copy-bg: color-mix(in oklch, #182838 82%, var(--surface-1));
+  --command-copy-hover-bg: color-mix(in oklch, #243c52 78%, var(--surface-1));
+  --command-copy-border: color-mix(in oklch, #3d6178 62%, transparent);
+  --model-control-border: color-mix(in oklch, var(--action-bg) 34%, var(--sidebar-input-border));
 }
 
 .dark {
   --radius: 1rem;
-  --neutral-tint-rgb: rgb(113 175 189);
-  --neutral-tint: #71afbd;
+  --neutral-tint-rgb: rgb(124 170 196);
+  --neutral-tint: #7caac4;
   --background: #0f1419;
   --foreground: rgb(255 255 255 / 0.96);
   --card: #151b22;
@@ -117,24 +153,60 @@
   --sidebar-accent-foreground: rgb(255 255 255 / 0.92);
   --sidebar-border: color-mix(in srgb, var(--neutral-tint-rgb) 15%, transparent);
   --sidebar-ring: #3391b7;
-  --sidebar-card-bg: color-mix(in srgb, var(--neutral-tint-rgb) 13%, transparent);
-  --sidebar-card-border: color-mix(in srgb, var(--neutral-tint-rgb) 20%, transparent);
-  --sidebar-input-bg: color-mix(in srgb, var(--neutral-tint-rgb) 20%, transparent);
-  --sidebar-input-border: color-mix(in srgb, var(--neutral-tint-rgb) 28%, transparent);
+  --sidebar-card-bg: color-mix(in srgb, var(--neutral-tint-rgb) 12%, transparent);
+  --sidebar-card-border: color-mix(in srgb, var(--neutral-tint-rgb) 24%, transparent);
+  --sidebar-input-bg: color-mix(in srgb, var(--neutral-tint-rgb) 18%, transparent);
+  --sidebar-input-border: color-mix(in srgb, var(--neutral-tint-rgb) 30%, transparent);
   --sidebar-control-off: color-mix(in srgb, var(--neutral-tint-rgb) 18%, transparent);
-  --sidebar-control-on: var(--primary);
-  --panel: #151b22;
-  --panel-border: color-mix(in srgb, var(--neutral-tint-rgb) 18%, transparent);
+  --sidebar-control-on: color-mix(in oklch, var(--primary) 78%, var(--surface-2));
+  --panel: color-mix(in oklch, #151b22 92%, white 8%);
+  --panel-border: color-mix(in srgb, var(--neutral-tint-rgb) 24%, transparent);
   --shadow-color: oklch(0.08 0.012 250);
   --shadow-opacity: 0.45;
   --surface-0: #0f1419;
   --surface-1: #151b22;
-  --surface-2: color-mix(in srgb, var(--neutral-tint-rgb) 14%, transparent);
-  --surface-3: color-mix(in srgb, var(--neutral-tint-rgb) 19%, transparent);
-  --surface-selected: color-mix(in srgb, var(--neutral-tint-rgb) 24%, transparent);
-  --surface-selected-border: color-mix(in srgb, var(--neutral-tint-rgb) 32%, transparent);
-  --chat-user-bg: color-mix(in srgb, var(--neutral-tint-rgb) 16%, transparent);
-  --chat-user-header-bg: color-mix(in srgb, var(--neutral-tint-rgb) 22%, transparent);
+  --surface-2: color-mix(in srgb, var(--neutral-tint-rgb) 11%, transparent);
+  --surface-3: color-mix(in srgb, var(--neutral-tint-rgb) 17%, transparent);
+  --surface-selected: color-mix(in srgb, var(--neutral-tint-rgb) 22%, transparent);
+  --surface-selected-border: color-mix(in srgb, var(--neutral-tint-rgb) 36%, transparent);
+  --chat-surface-bg: color-mix(in oklch, var(--surface-1) 88%, black 12%);
+  --chat-user-bg: color-mix(in srgb, var(--neutral-tint-rgb) 9%, transparent);
+  --chat-user-header-bg: color-mix(in srgb, var(--neutral-tint-rgb) 13%, transparent);
+  --action-bg: color-mix(in oklch, var(--primary) 84%, white 16%);
+  --action-bg-hover: color-mix(in oklch, var(--primary) 80%, white 20%);
+  --action-border: color-mix(in oklch, var(--primary) 56%, transparent);
+  --action-fg: var(--primary-foreground);
+  --danger-soft-bg: color-mix(in oklch, var(--destructive) 18%, transparent);
+  --danger-soft-border: color-mix(in oklch, var(--destructive) 42%, transparent);
+  --danger-soft-fg: color-mix(in oklch, var(--destructive) 82%, white 18%);
+  --status-idle-bg: color-mix(in oklch, var(--surface-3) 90%, transparent);
+  --status-idle-border: color-mix(in oklch, var(--border) 72%, transparent);
+  --status-idle-fg: color-mix(in oklch, var(--foreground) 70%, var(--muted-foreground) 30%);
+  --status-running-bg: color-mix(in oklch, #20aa68 22%, transparent);
+  --status-running-border: color-mix(in oklch, #2ec57a 46%, transparent);
+  --status-running-fg: color-mix(in oklch, #7be3ad 68%, white 32%);
+  --status-error-bg: var(--danger-soft-bg);
+  --status-error-border: var(--danger-soft-border);
+  --status-error-fg: var(--danger-soft-fg);
+  --status-connecting-bg: color-mix(in oklch, #b97811 24%, transparent);
+  --status-connecting-border: color-mix(in oklch, #cf8a14 50%, transparent);
+  --status-connecting-fg: color-mix(in oklch, #f5cb86 66%, white 34%);
+  --status-connected-bg: color-mix(in oklch, #239199 24%, transparent);
+  --status-connected-border: color-mix(in oklch, #27a8b0 52%, transparent);
+  --status-connected-fg: color-mix(in oklch, #9be5e8 68%, white 32%);
+  --status-disconnected-bg: var(--status-idle-bg);
+  --status-disconnected-border: var(--status-idle-border);
+  --status-disconnected-fg: var(--status-idle-fg);
+  --status-approval-bg: color-mix(in oklch, #a77113 26%, transparent);
+  --status-approval-border: color-mix(in oklch, #c68518 48%, transparent);
+  --status-approval-fg: color-mix(in oklch, #f2c986 68%, white 32%);
+  --command-bg: color-mix(in oklch, #060c12 90%, var(--surface-1));
+  --command-border: color-mix(in oklch, #325066 68%, transparent);
+  --command-fg: rgb(236 243 248 / 0.96);
+  --command-copy-bg: color-mix(in oklch, #1b2d3f 86%, var(--surface-1));
+  --command-copy-hover-bg: color-mix(in oklch, #254056 82%, var(--surface-1));
+  --command-copy-border: color-mix(in oklch, #406882 66%, transparent);
+  --model-control-border: color-mix(in oklch, var(--action-bg) 38%, var(--sidebar-input-border));
 }
 
 @theme inline {
@@ -381,7 +453,7 @@ textarea:focus::-webkit-scrollbar {
 }
 
 .sidebar-card {
-  border: 0;
+  border: 1px solid var(--sidebar-card-border);
   border-radius: var(--radius-card);
   background: var(--sidebar-card-bg);
   box-shadow: 0 1px 2px color-mix(in oklch, var(--foreground) 5%, transparent);
@@ -418,8 +490,8 @@ textarea:focus::-webkit-scrollbar {
 }
 
 .ui-switch--on {
-  background: color-mix(in oklch, var(--primary) 100%, var(--accent) 0%);
-  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--primary) 34%, transparent);
+  background: var(--sidebar-control-on);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--sidebar-control-on) 56%, transparent);
 }
 
 .ui-switch-thumb {
@@ -442,9 +514,9 @@ textarea:focus::-webkit-scrollbar {
   align-items: center;
   justify-content: center;
   border-radius: calc(var(--radius) + 0.16rem);
-  border: 1px solid transparent;
-  background: color-mix(in oklch, var(--primary) 93%, var(--accent) 7%);
-  color: var(--primary-foreground);
+  border: 1px solid var(--action-border);
+  background: var(--action-bg);
+  color: var(--action-fg);
   transition: filter 180ms ease;
 }
 
@@ -489,14 +561,14 @@ textarea:focus::-webkit-scrollbar {
 }
 
 .ui-panel {
-  border: 0;
+  border: 1px solid var(--panel-border);
   border-radius: var(--radius-card);
-  background: color-mix(in oklch, var(--panel) 90%, white 10%);
+  background: var(--panel);
   box-shadow: var(--shadow-sm);
 }
 
 .dark .ui-panel {
-  background: color-mix(in oklch, var(--panel) 95%, white 5%);
+  background: var(--panel);
   box-shadow: var(--shadow);
 }
 
@@ -512,7 +584,12 @@ textarea:focus::-webkit-scrollbar {
 
 .ui-section + .ui-section,
 .sidebar-section + .sidebar-section {
-  margin-top: 2rem;
+  margin-top: 1.5rem;
+}
+
+.sidebar-section + .sidebar-section {
+  border-top: 1px solid color-mix(in oklch, var(--border) 66%, transparent);
+  padding-top: 1.35rem;
 }
 
 .ui-section-title,
@@ -524,12 +601,40 @@ textarea:focus::-webkit-scrollbar {
   color: color-mix(in oklch, var(--foreground) 96%, var(--muted-foreground) 4%);
 }
 
+.sidebar-section-title {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.7rem;
+  border: 1px solid color-mix(in oklch, var(--border) 72%, transparent);
+  border-radius: calc(var(--radius-small) - 2px);
+  padding: 0.12rem 0.5rem;
+  background: color-mix(in oklch, var(--surface-2) 86%, transparent);
+}
+
 .ui-card,
 .sidebar-card {
-  border: 0;
+  border: 1px solid var(--sidebar-card-border);
   border-radius: var(--radius-card);
   background: var(--sidebar-card-bg);
   box-shadow: 0 1px 2px color-mix(in oklch, var(--foreground) 5%, transparent);
+}
+
+.ui-card-selected {
+  border-color: var(--surface-selected-border);
+  background: var(--surface-selected);
+  box-shadow: 0 4px 10px color-mix(in oklch, var(--foreground) 8%, transparent);
+}
+
+.ui-card-select-indicator {
+  pointer-events: none;
+  position: absolute;
+  left: 0;
+  top: 0.7rem;
+  bottom: 0.7rem;
+  width: 3px;
+  border-radius: 0 9999px 9999px 0;
+  background: color-mix(in oklch, var(--foreground) 54%, var(--surface-selected-border));
+  transition: opacity 180ms ease;
 }
 
 .ui-input,
@@ -557,15 +662,25 @@ textarea:focus::-webkit-scrollbar {
   align-items: center;
   justify-content: center;
   border-radius: var(--radius-small);
-  border: 1px solid transparent;
-  background: color-mix(in oklch, var(--primary) 93%, var(--accent) 7%);
-  color: var(--primary-foreground);
+  border: 1px solid var(--action-border);
+  background: var(--action-bg);
+  color: var(--action-fg);
   transition: filter 180ms ease;
 }
 
 .ui-btn-primary:hover,
 .sidebar-btn-primary:hover {
-  filter: brightness(1.04);
+  background: var(--action-bg-hover);
+  filter: none;
+}
+
+.ui-btn-send {
+  border-radius: 7px;
+  background: color-mix(in oklch, var(--action-bg) 92%, var(--surface-1));
+}
+
+.ui-btn-send:hover {
+  background: color-mix(in oklch, var(--action-bg-hover) 92%, var(--surface-1));
 }
 
 .ui-btn-secondary {
@@ -574,17 +689,17 @@ textarea:focus::-webkit-scrollbar {
   align-items: center;
   justify-content: center;
   border-radius: var(--radius-small);
-  border: 0;
-  background: color-mix(in oklch, var(--surface-3) 90%, transparent);
-  color: color-mix(in oklch, var(--foreground) 82%, var(--muted-foreground) 18%);
+  border: 1px solid color-mix(in oklch, var(--border) 82%, transparent);
+  background: color-mix(in oklch, var(--surface-1) 92%, transparent);
+  color: color-mix(in oklch, var(--foreground) 74%, var(--muted-foreground) 26%);
   transition:
     border-color 180ms ease,
     background-color 180ms ease;
 }
 
 .ui-btn-secondary:hover {
-  background: color-mix(in oklch, var(--surface-2) 96%, transparent);
-  box-shadow: var(--shadow-2xs);
+  border-color: color-mix(in oklch, var(--border) 62%, var(--foreground) 38%);
+  background: color-mix(in oklch, var(--surface-2) 90%, transparent);
 }
 
 .ui-btn-ghost,
@@ -645,10 +760,10 @@ textarea:focus::-webkit-scrollbar {
 }
 
 .ui-segment-item {
-  border: 0;
+  border: 1px solid transparent;
   border-radius: calc(var(--radius-small) - 2px);
   background: color-mix(in oklch, var(--surface-1) 88%, var(--surface-2));
-  color: color-mix(in oklch, var(--foreground) 72%, var(--muted-foreground) 28%);
+  color: color-mix(in oklch, var(--foreground) 64%, var(--muted-foreground) 36%);
   font-size: 12px;
   font-weight: 500;
   letter-spacing: 0.02em;
@@ -661,24 +776,57 @@ textarea:focus::-webkit-scrollbar {
 
 .ui-segment-item[data-active="true"],
 .ui-segment-item[aria-pressed="true"] {
-  background: color-mix(in oklch, var(--primary) 10%, var(--surface-1));
-  color: var(--foreground);
-  box-shadow: 0 1px 2px color-mix(in oklch, var(--foreground) 6%, transparent);
+  background: color-mix(in oklch, var(--surface-selected) 92%, var(--surface-1));
+  border: 1px solid var(--surface-selected-border);
+  color: color-mix(in oklch, var(--foreground) 90%, var(--muted-foreground) 10%);
+  box-shadow: 0 1px 2px color-mix(in oklch, var(--foreground) 9%, transparent);
 }
 
 .ui-selected {
   background: var(--surface-selected);
+  border: 1px solid var(--surface-selected-border);
   box-shadow: 0 1px 2px color-mix(in oklch, var(--foreground) 5%, transparent);
+}
+
+.ui-chat-scroll {
+  border: 1px solid color-mix(in oklch, var(--border) 58%, transparent);
+  border-radius: 12px;
+  background: var(--chat-surface-bg);
+}
+
+.ui-chat-user-card {
+  border: 1px solid color-mix(in oklch, var(--border) 62%, transparent);
+  box-shadow: 0 2px 6px color-mix(in oklch, var(--foreground) 7%, transparent);
+}
+
+.ui-chat-assistant-card {
+  border: 1px solid color-mix(in oklch, var(--border) 56%, transparent);
+  border-radius: 10px;
+  background: color-mix(in oklch, var(--surface-1) 84%, var(--surface-2));
+  padding: 0.7rem 0.85rem;
+  box-shadow: 0 1px 3px color-mix(in oklch, var(--foreground) 6%, transparent);
+}
+
+.ui-chat-thinking {
+  border: 1px solid color-mix(in oklch, var(--border) 48%, transparent);
+  background: color-mix(in oklch, var(--surface-1) 92%, transparent);
+  color: color-mix(in oklch, var(--muted-foreground) 86%, var(--foreground) 14%);
+}
+
+.ui-settings-row {
+  border: 1px solid color-mix(in oklch, var(--border) 56%, transparent);
+  border-radius: var(--radius-small);
+  background: color-mix(in oklch, var(--surface-2) 78%, transparent);
 }
 
 .ui-chip {
   display: inline-flex;
   align-items: center;
   border-radius: var(--radius-small);
-  border: 0;
+  border: 1px solid var(--status-idle-border);
   background: color-mix(in oklch, var(--surface-2) 88%, transparent);
   box-shadow: 0 1px 2px color-mix(in oklch, var(--foreground) 4%, transparent);
-  color: color-mix(in oklch, var(--foreground) 70%, var(--muted-foreground) 30%);
+  color: var(--status-idle-fg);
 }
 
 .ui-scroll {
@@ -764,6 +912,120 @@ textarea:focus::-webkit-scrollbar {
   font-weight: 400;
   letter-spacing: 0.045em;
   line-height: 1.1;
+}
+
+.ui-control-important {
+  border-color: var(--model-control-border);
+  background: color-mix(in oklch, var(--surface-1) 80%, var(--surface-2));
+  box-shadow: 0 1px 2px color-mix(in oklch, var(--foreground) 8%, transparent);
+}
+
+.ui-alert-danger {
+  border: 1px solid var(--danger-soft-border);
+  background: var(--danger-soft-bg);
+  color: var(--danger-soft-fg);
+}
+
+.ui-text-danger {
+  color: var(--danger-soft-fg);
+}
+
+.ui-badge-status-idle {
+  border: 1px solid var(--status-idle-border);
+  background: var(--status-idle-bg);
+  color: var(--status-idle-fg);
+}
+
+.ui-badge-status-running {
+  border: 1px solid var(--status-running-border);
+  background: var(--status-running-bg);
+  color: var(--status-running-fg);
+}
+
+.ui-badge-status-error {
+  border: 1px solid var(--status-error-border);
+  background: var(--status-error-bg);
+  color: var(--status-error-fg);
+}
+
+.ui-badge-status-connecting {
+  border: 1px solid var(--status-connecting-border);
+  background: var(--status-connecting-bg);
+  color: var(--status-connecting-fg);
+}
+
+.ui-badge-status-connected {
+  border: 1px solid var(--status-connected-border);
+  background: var(--status-connected-bg);
+  color: var(--status-connected-fg);
+}
+
+.ui-badge-status-disconnected {
+  border: 1px solid var(--status-disconnected-border);
+  background: var(--status-disconnected-bg);
+  color: var(--status-disconnected-fg);
+}
+
+.ui-badge-approval {
+  border: 1px solid var(--status-approval-border);
+  background: var(--status-approval-bg);
+  color: var(--status-approval-fg);
+}
+
+.ui-btn-danger {
+  border: 1px solid var(--danger-soft-border);
+  background: var(--danger-soft-bg);
+  color: var(--danger-soft-fg);
+}
+
+.ui-btn-danger:hover {
+  background: color-mix(in oklch, var(--destructive) 20%, transparent);
+}
+
+.ui-btn-icon-danger {
+  color: var(--danger-soft-fg);
+}
+
+.ui-btn-icon-danger:hover {
+  background: color-mix(in oklch, var(--destructive) 18%, transparent);
+  color: var(--danger-soft-fg);
+}
+
+.ui-dot-status-disconnected,
+.ui-dot-status-connecting,
+.ui-dot-status-connected {
+  border-radius: 9999px;
+}
+
+.ui-dot-status-disconnected {
+  background: var(--status-disconnected-fg);
+}
+
+.ui-dot-status-connecting {
+  background: var(--status-connecting-fg);
+}
+
+.ui-dot-status-connected {
+  background: var(--status-connected-fg);
+}
+
+.ui-command-surface {
+  border: 1px solid var(--command-border);
+  background: var(--command-bg);
+}
+
+.ui-command-surface code {
+  color: var(--command-fg);
+}
+
+.ui-command-copy {
+  border: 1px solid var(--command-copy-border);
+  background: var(--command-copy-bg);
+  color: var(--command-fg);
+}
+
+.ui-command-copy:hover {
+  background: var(--command-copy-hover-bg);
 }
 
 .status-ping {

@@ -2,7 +2,7 @@ import type { AgentCreateModalSubmitPayload } from "@/features/agents/creation/t
 import {
   resolveMutationStartGuard,
   resolveMutationTimeoutIntent,
-} from "@/features/agents/operations/agentMutationLifecycleController";
+} from "@/features/agents/operations/mutationLifecycleWorkflow";
 import type { ConfigMutationKind } from "@/features/agents/operations/useConfigMutationQueue";
 
 export type CreateAgentBlockState = {
