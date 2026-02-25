@@ -223,6 +223,19 @@ export const buildHistoryLines = (messages: ChatHistoryMessage[]): HistoryLinesR
   let lastRole: string | null = null;
   let lastUser: string | null = null;
   let lastUserAt: number | null = null;
+  const resolveAssistantTerminalLine = (message: ChatHistoryMessage): string | null => {
+    const stopReason =
+      typeof message.stopReason === "string" ? message.stopReason.trim().toLowerCase() : "";
+    if (stopReason === "aborted") return "Run aborted.";
+    if (stopReason === "error") {
+      const errorMessage =
+        typeof message.errorMessage === "string" ? message.errorMessage.trim() : "";
+      return errorMessage ? `Error: ${errorMessage}` : "Run error.";
+    }
+    const fallbackError =
+      typeof message.errorMessage === "string" ? message.errorMessage.trim() : "";
+    return fallbackError ? `Error: ${fallbackError}` : null;
+  };
   const isRestartSentinelMessage = (text: string) => {
     const trimmed = text.trim();
     if (!trimmed) return false;
@@ -236,7 +249,6 @@ export const buildHistoryLines = (messages: ChatHistoryMessage[]): HistoryLinesR
     const thinking =
       role === "assistant" ? formatThinkingMarkdown(extractThinking(message) ?? "") : "";
     const toolLines = extractToolLines(message);
-    if (!text && !thinking && toolLines.length === 0) continue;
     if (role === "system") {
       if (toolLines.length > 0) {
         lines.push(...toolLines);
@@ -259,6 +271,11 @@ export const buildHistoryLines = (messages: ChatHistoryMessage[]): HistoryLinesR
       }
       lastRole = "user";
     } else if (role === "assistant") {
+      const terminalLine =
+        !text && !thinking && toolLines.length === 0 ? resolveAssistantTerminalLine(message) : null;
+      if (!text && !thinking && toolLines.length === 0 && !terminalLine) {
+        continue;
+      }
       const at = extractMessageTimestamp(message);
       if (typeof at === "number") {
         lastAssistantAt = at;
@@ -275,6 +292,10 @@ export const buildHistoryLines = (messages: ChatHistoryMessage[]): HistoryLinesR
       if (text) {
         lines.push(text);
         lastAssistant = text;
+      }
+      if (terminalLine) {
+        lines.push(terminalLine);
+        lastAssistant = terminalLine;
       }
       lastRole = "assistant";
     } else if (toolLines.length > 0) {

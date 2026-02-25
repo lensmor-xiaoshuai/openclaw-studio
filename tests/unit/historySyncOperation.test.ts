@@ -245,6 +245,59 @@ describe("historySyncOperation", () => {
     expect(patch.lastAppliedHistoryRequestId).toBe("req-3c");
   });
 
+  it("does not infer running state when terminal history includes an aborted assistant message", async () => {
+    const agent = createAgent({
+      status: "idle",
+      runId: null,
+      runStartedAt: null,
+      transcriptRevision: 1,
+      outputLines: [],
+    });
+    const loadedAt = Date.parse("2024-01-01T00:30:00.000Z");
+    const commands = await runHistorySyncOperation({
+      client: {
+        call: async <T>() =>
+          ({
+            sessionKey: agent.sessionKey,
+            messages: [
+              {
+                role: "user",
+                timestamp: "2024-01-01T00:29:40.000Z",
+                content: "still working?",
+              },
+              {
+                role: "assistant",
+                timestamp: "2024-01-01T00:29:41.000Z",
+                content: [],
+                stopReason: "aborted",
+                errorMessage: "Request was aborted",
+              },
+            ],
+          }) as T,
+      },
+      agentId: "agent-1",
+      getAgent: () => agent,
+      inFlightSessionKeys: new Set<string>(),
+      requestId: "req-3d",
+      loadedAt,
+      defaultLimit: 200,
+      maxLimit: 5000,
+      transcriptV2Enabled: true,
+    });
+
+    const updates = getCommandsByKind(commands, "dispatchUpdateAgent");
+    const finalUpdate = updates[updates.length - 1];
+    if (!finalUpdate) throw new Error("Expected final update command.");
+    const patch = finalUpdate.patch;
+    expect(patch.status).toBeUndefined();
+    expect(patch.runId).toBeUndefined();
+    expect(Array.isArray(patch.outputLines)).toBe(true);
+    expect(patch.outputLines).toContain("Run aborted.");
+    expect(patch.lastResult).toBe("Run aborted.");
+    expect(patch.latestPreview).toBe("Run aborted.");
+    expect(patch.lastAppliedHistoryRequestId).toBe("req-3d");
+  });
+
   it("returns legacy history sync patch command when transcript v2 is disabled", async () => {
     const agent = createAgent({
       transcriptRevision: 0,

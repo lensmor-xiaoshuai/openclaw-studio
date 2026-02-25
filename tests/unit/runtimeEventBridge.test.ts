@@ -319,6 +319,35 @@ describe("runtime event bridge helpers", () => {
     expect(history.lastUser).toBe("hello there");
   });
 
+  it("records aborted assistant terminal messages even when assistant content is empty", () => {
+    const abortedAt = Date.parse("2024-01-01T00:00:01.000Z");
+    const history = buildHistoryLines([
+      {
+        role: "user",
+        timestamp: "2024-01-01T00:00:00.000Z",
+        content: "hi",
+      },
+      {
+        role: "assistant",
+        timestamp: new Date(abortedAt).toISOString(),
+        content: [],
+        stopReason: "aborted",
+        errorMessage: "Request was aborted",
+      },
+    ]);
+
+    expect(history.lines).toEqual([
+      '[[meta]]{"role":"user","timestamp":1704067200000}',
+      "> hi",
+      '[[meta]]{"role":"assistant","timestamp":1704067201000}',
+      "Run aborted.",
+    ]);
+    expect(history.lastAssistant).toBe("Run aborted.");
+    expect(history.lastAssistantAt).toBe(abortedAt);
+    expect(history.lastRole).toBe("assistant");
+    expect(history.lastUser).toBe("hi");
+  });
+
   it("does not render internal auto-resume user messages in reconstructed history", () => {
     const history = buildHistoryLines([
       {
@@ -481,6 +510,49 @@ Continue where you left off and finish the task.`,
       lastAssistantMessageAt: Date.parse("2024-01-01T00:00:02.000Z"),
       lastUserMessage: "hello",
       historyLoadedAt: 300,
+      status: "idle",
+      runId: null,
+      runStartedAt: null,
+      streamText: null,
+      thinkingTrace: null,
+    });
+  });
+
+  it("clears stale running state when history ends with aborted assistant terminal message", () => {
+    const loadedAt = Date.parse("2024-01-01T00:30:00.000Z");
+    const patch = buildHistorySyncPatch({
+      messages: [
+        {
+          role: "user",
+          timestamp: "2024-01-01T00:29:00.000Z",
+          content: "hi",
+        },
+        {
+          role: "assistant",
+          timestamp: "2024-01-01T00:29:01.000Z",
+          content: [],
+          stopReason: "aborted",
+          errorMessage: "Request was aborted",
+        },
+      ],
+      currentLines: [],
+      loadedAt,
+      status: "running",
+      runId: null,
+    });
+
+    expect(patch).toEqual({
+      outputLines: [
+        '[[meta]]{"role":"user","timestamp":1704068940000}',
+        "> hi",
+        '[[meta]]{"role":"assistant","timestamp":1704068941000}',
+        "Run aborted.",
+      ],
+      lastResult: "Run aborted.",
+      latestPreview: "Run aborted.",
+      lastAssistantMessageAt: Date.parse("2024-01-01T00:29:01.000Z"),
+      lastUserMessage: "hi",
+      historyLoadedAt: loadedAt,
       status: "idle",
       runId: null,
       runStartedAt: null,
