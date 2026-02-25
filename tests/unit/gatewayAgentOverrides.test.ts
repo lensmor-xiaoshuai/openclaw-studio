@@ -162,17 +162,40 @@ describe("updateGatewayAgentOverrides", () => {
     });
   });
 
-  it("retries config.set once when the config hash is stale", async () => {
+  it("preserves concurrent config changes when config.set retries after stale hash", async () => {
     let configGetCount = 0;
     let configSetCount = 0;
+    const callOrder: string[] = [];
     const client = {
       call: vi.fn(async (method: string, params?: unknown) => {
+        callOrder.push(method);
         if (method === "config.get") {
           configGetCount += 1;
+          if (configGetCount === 1) {
+            return {
+              exists: true,
+              hash: "cfg-retry-1",
+              config: {
+                gateway: {
+                  reload: {
+                    mode: "hybrid",
+                  },
+                },
+                agents: {
+                  list: [{ id: "agent-1" }],
+                },
+              },
+            };
+          }
           return {
             exists: true,
-            hash: configGetCount === 1 ? "cfg-retry-1" : "cfg-retry-2",
+            hash: "cfg-retry-2",
             config: {
+              gateway: {
+                reload: {
+                  mode: "off",
+                },
+              },
               agents: {
                 list: [{ id: "agent-1" }],
               },
@@ -181,14 +204,33 @@ describe("updateGatewayAgentOverrides", () => {
         }
         if (method === "config.set") {
           configSetCount += 1;
+          const payload = params as { raw?: string; baseHash?: string };
+          const parsed = JSON.parse(payload.raw ?? "") as {
+            gateway?: { reload?: { mode?: string } };
+            agents?: {
+              list?: Array<{
+                id?: string;
+                tools?: {
+                  profile?: string;
+                  alsoAllow?: string[];
+                };
+              }>;
+            };
+          };
           if (configSetCount === 1) {
+            expect(payload.baseHash).toBe("cfg-retry-1");
+            expect(parsed.gateway?.reload?.mode).toBe("hybrid");
             throw new GatewayResponseError({
               code: "INVALID_REQUEST",
               message: "config changed since last load; re-run config.get and retry",
             });
           }
-          const payload = params as { baseHash?: string };
           expect(payload.baseHash).toBe("cfg-retry-2");
+          expect(parsed.gateway?.reload?.mode).toBe("off");
+          expect(parsed.agents?.list?.find((entry) => entry.id === "agent-1")?.tools).toEqual({
+            profile: "coding",
+            alsoAllow: ["group:web"],
+          });
           return { ok: true };
         }
         throw new Error(`unexpected method ${method}`);
@@ -205,6 +247,104 @@ describe("updateGatewayAgentOverrides", () => {
         },
       },
     });
+
+    expect(configGetCount).toBe(2);
+    expect(configSetCount).toBe(2);
+    expect(callOrder).toEqual(["config.get", "config.set", "config.get", "config.set"]);
+  });
+
+  it("omits baseHash when config does not exist yet", async () => {
+    let configSetCount = 0;
+    const client = {
+      call: vi.fn(async (method: string, params?: unknown) => {
+        if (method === "config.get") {
+          return {
+            exists: false,
+            config: {
+              agents: {
+                list: [],
+              },
+            },
+          };
+        }
+        if (method === "config.set") {
+          configSetCount += 1;
+          const payload = params as { raw?: string; baseHash?: string };
+          const parsed = JSON.parse(payload.raw ?? "") as {
+            agents?: {
+              list?: Array<{
+                id?: string;
+                tools?: {
+                  alsoAllow?: string[];
+                  deny?: string[];
+                };
+              }>;
+            };
+          };
+          expect(payload.baseHash).toBeUndefined();
+          expect(parsed.agents?.list?.find((entry) => entry.id === "agent-1")?.tools).toEqual({
+            alsoAllow: ["group:runtime"],
+            deny: ["group:fs"],
+          });
+          return { ok: true };
+        }
+        throw new Error(`unexpected method ${method}`);
+      }),
+    } as unknown as GatewayClient;
+
+    await updateGatewayAgentOverrides({
+      client,
+      agentId: "agent-1",
+      overrides: {
+        tools: {
+          alsoAllow: ["group:runtime"],
+          deny: ["group:fs"],
+        },
+      },
+    });
+
+    expect(configSetCount).toBe(1);
+  });
+
+  it("fails after a single stale-hash retry attempt", async () => {
+    let configGetCount = 0;
+    let configSetCount = 0;
+    const client = {
+      call: vi.fn(async (method: string) => {
+        if (method === "config.get") {
+          configGetCount += 1;
+          return {
+            exists: true,
+            hash: `cfg-stale-${configGetCount}`,
+            config: {
+              agents: {
+                list: [{ id: "agent-1" }],
+              },
+            },
+          };
+        }
+        if (method === "config.set") {
+          configSetCount += 1;
+          throw new GatewayResponseError({
+            code: "INVALID_REQUEST",
+            message: "config changed since last load; re-run config.get and retry",
+          });
+        }
+        throw new Error(`unexpected method ${method}`);
+      }),
+    } as unknown as GatewayClient;
+
+    await expect(
+      updateGatewayAgentOverrides({
+        client,
+        agentId: "agent-1",
+        overrides: {
+          tools: {
+            alsoAllow: ["group:runtime"],
+          },
+        },
+      })
+    ).rejects.toBeInstanceOf(GatewayResponseError);
 
     expect(configGetCount).toBe(2);
     expect(configSetCount).toBe(2);

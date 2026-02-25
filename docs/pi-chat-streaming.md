@@ -123,7 +123,7 @@ Connection note:
 
 Token resolution note:
 - The Studio server resolves an upstream token from `openclaw-studio/settings.json`, and if it is missing it may fall back to the local OpenClaw config in `openclaw.json` (token + port). This behavior exists in both the WS proxy path (`server/studio-settings.js`) and the `/api/studio` storage layer (`src/lib/studio/settings-store.ts`) and they should remain consistent.
-- The WS proxy currently requires an upstream token to be available from the Studio host settings resolver even if the browser `connect` frame includes a token. See the `studio.gateway_token_missing` check in `server/gateway-proxy.js`.
+- During `connect`, the WS proxy forwards browser-provided auth (`params.auth.token` or `params.device.signature`) as-is. It injects the host-resolved token only when browser auth is absent. `studio.gateway_token_missing` is returned only when neither browser auth nor host token is available.
 
 ## WebSocket Frame Shapes
 
@@ -145,6 +145,7 @@ The first *protocol frame* from the browser must be `req(connect)`. The WS proxy
 - Rejects non-`connect` frames until connected.
 - Opens an upstream WS to the configured Gateway URL.
 - Injects `auth.token` into the connect params if the connect frame does not already contain a token, and if it does not include a device signature.
+- Returns `studio.gateway_token_missing` only when no browser auth is present and no host token can be resolved.
 - Sets an `Origin` header for the upstream WebSocket derived from the upstream URL (and normalizes loopback hostnames to `localhost`).
 
 Code:

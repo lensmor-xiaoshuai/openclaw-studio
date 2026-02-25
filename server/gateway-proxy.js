@@ -118,6 +118,7 @@ function createGatewayProxy(options) {
           return;
         }
         connectRequestId = id;
+        const browserHasAuth = hasNonEmptyToken(parsed.params) || hasDeviceSignature(parsed.params);
 
         let upstreamUrl = "";
         let upstreamToken = "";
@@ -138,7 +139,7 @@ function createGatewayProxy(options) {
           );
           return;
         }
-        if (!upstreamToken) {
+        if (!upstreamToken && !browserHasAuth) {
           sendConnectError(
             "studio.gateway_token_missing",
             "Upstream gateway token is not configured on the Studio host."
@@ -161,7 +162,7 @@ function createGatewayProxy(options) {
 
         upstreamWs.on("open", () => {
           upstreamReady = true;
-          if (hasNonEmptyToken(parsed.params) || hasDeviceSignature(parsed.params)) {
+          if (browserHasAuth) {
             upstreamWs.send(JSON.stringify(parsed));
             return;
           }

@@ -331,39 +331,6 @@ const applyGatewayConfigPatch = async (params: {
   }
 };
 
-const applyGatewayConfigSet = async (params: {
-  client: GatewayClient;
-  config: Record<string, unknown>;
-  baseHash?: string | null;
-  exists?: boolean;
-  attempt?: number;
-}): Promise<void> => {
-  const attempt = params.attempt ?? 0;
-  const requiresBaseHash = params.exists !== false;
-  const baseHash = requiresBaseHash ? params.baseHash?.trim() : undefined;
-  if (requiresBaseHash && !baseHash) {
-    throw new Error("Gateway config hash unavailable; re-run config.get.");
-  }
-  const payload: Record<string, unknown> = {
-    raw: JSON.stringify(params.config, null, 2),
-  };
-  if (baseHash) payload.baseHash = baseHash;
-  try {
-    await params.client.call("config.set", payload);
-  } catch (err) {
-    if (attempt < 1 && shouldRetryConfigWrite(err)) {
-      const snapshot = await params.client.call<GatewayConfigSnapshot>("config.get", {});
-      return applyGatewayConfigSet({
-        ...params,
-        baseHash: snapshot.hash ?? undefined,
-        exists: snapshot.exists,
-        attempt: attempt + 1,
-      });
-    }
-    throw err;
-  }
-};
-
 export const renameGatewayAgent = async (params: {
   client: GatewayClient;
   agentId: string;
@@ -536,70 +503,88 @@ export const updateGatewayAgentOverrides = async (params: {
     return;
   }
 
-  const snapshot = await params.client.call<GatewayConfigSnapshot>("config.get", {});
-  const baseConfig = isRecord(snapshot.config) ? snapshot.config : {};
-  const list = readConfigAgentList(baseConfig);
-  const { list: nextList } = upsertConfigAgentEntry(list, agentId, (entry) => {
-    const next: ConfigAgentEntry = { ...entry, id: agentId };
+  const buildNextConfig = (baseConfig: Record<string, unknown>): Record<string, unknown> => {
+    const list = readConfigAgentList(baseConfig);
+    const { list: nextList } = upsertConfigAgentEntry(list, agentId, (entry) => {
+      const next: ConfigAgentEntry = { ...entry, id: agentId };
 
-    if (hasSandboxOverrides) {
-      const currentSandbox = isRecord(next.sandbox) ? { ...next.sandbox } : {};
-      if (params.overrides.sandbox?.mode) {
-        currentSandbox.mode = params.overrides.sandbox.mode;
-      }
-      if (params.overrides.sandbox?.workspaceAccess) {
-        currentSandbox.workspaceAccess = params.overrides.sandbox.workspaceAccess;
-      }
-      next.sandbox = currentSandbox;
-    }
-
-    if (hasToolsOverrides) {
-      const currentTools = isRecord(next.tools) ? { ...next.tools } : {};
-      if (params.overrides.tools?.profile) {
-        currentTools.profile = params.overrides.tools.profile;
-      }
-      const allow = normalizeToolList(params.overrides.tools?.allow);
-      if (allow !== undefined) {
-        currentTools.allow = allow;
-        delete currentTools.alsoAllow;
-      }
-      const alsoAllow = normalizeToolList(params.overrides.tools?.alsoAllow);
-      if (alsoAllow !== undefined) {
-        currentTools.alsoAllow = alsoAllow;
-        delete currentTools.allow;
-      }
-      const deny = normalizeToolList(params.overrides.tools?.deny);
-      if (deny !== undefined) {
-        currentTools.deny = deny;
-      }
-
-      const sandboxAllow = normalizeToolList(params.overrides.tools?.sandbox?.tools?.allow);
-      const sandboxDeny = normalizeToolList(params.overrides.tools?.sandbox?.tools?.deny);
-      if (sandboxAllow !== undefined || sandboxDeny !== undefined) {
-        const sandboxRaw = (currentTools as Record<string, unknown>).sandbox;
-        const sandbox = isRecord(sandboxRaw) ? { ...sandboxRaw } : {};
-        const sandboxToolsRaw = (sandbox as Record<string, unknown>).tools;
-        const sandboxTools = isRecord(sandboxToolsRaw) ? { ...sandboxToolsRaw } : {};
-        if (sandboxAllow !== undefined) {
-          (sandboxTools as Record<string, unknown>).allow = sandboxAllow;
+      if (hasSandboxOverrides) {
+        const currentSandbox = isRecord(next.sandbox) ? { ...next.sandbox } : {};
+        if (params.overrides.sandbox?.mode) {
+          currentSandbox.mode = params.overrides.sandbox.mode;
         }
-        if (sandboxDeny !== undefined) {
-          (sandboxTools as Record<string, unknown>).deny = sandboxDeny;
+        if (params.overrides.sandbox?.workspaceAccess) {
+          currentSandbox.workspaceAccess = params.overrides.sandbox.workspaceAccess;
         }
-        (sandbox as Record<string, unknown>).tools = sandboxTools;
-        (currentTools as Record<string, unknown>).sandbox = sandbox;
+        next.sandbox = currentSandbox;
       }
-      next.tools = currentTools;
+
+      if (hasToolsOverrides) {
+        const currentTools = isRecord(next.tools) ? { ...next.tools } : {};
+        if (params.overrides.tools?.profile) {
+          currentTools.profile = params.overrides.tools.profile;
+        }
+        const allow = normalizeToolList(params.overrides.tools?.allow);
+        if (allow !== undefined) {
+          currentTools.allow = allow;
+          delete currentTools.alsoAllow;
+        }
+        const alsoAllow = normalizeToolList(params.overrides.tools?.alsoAllow);
+        if (alsoAllow !== undefined) {
+          currentTools.alsoAllow = alsoAllow;
+          delete currentTools.allow;
+        }
+        const deny = normalizeToolList(params.overrides.tools?.deny);
+        if (deny !== undefined) {
+          currentTools.deny = deny;
+        }
+
+        const sandboxAllow = normalizeToolList(params.overrides.tools?.sandbox?.tools?.allow);
+        const sandboxDeny = normalizeToolList(params.overrides.tools?.sandbox?.tools?.deny);
+        if (sandboxAllow !== undefined || sandboxDeny !== undefined) {
+          const sandboxRaw = (currentTools as Record<string, unknown>).sandbox;
+          const sandbox = isRecord(sandboxRaw) ? { ...sandboxRaw } : {};
+          const sandboxToolsRaw = (sandbox as Record<string, unknown>).tools;
+          const sandboxTools = isRecord(sandboxToolsRaw) ? { ...sandboxToolsRaw } : {};
+          if (sandboxAllow !== undefined) {
+            (sandboxTools as Record<string, unknown>).allow = sandboxAllow;
+          }
+          if (sandboxDeny !== undefined) {
+            (sandboxTools as Record<string, unknown>).deny = sandboxDeny;
+          }
+          (sandbox as Record<string, unknown>).tools = sandboxTools;
+          (currentTools as Record<string, unknown>).sandbox = sandbox;
+        }
+        next.tools = currentTools;
+      }
+
+      return next;
+    });
+    return writeConfigAgentList(baseConfig, nextList);
+  };
+
+  const attemptWrite = async (attempt: number): Promise<void> => {
+    const snapshot = await params.client.call<GatewayConfigSnapshot>("config.get", {});
+    const baseConfig = isRecord(snapshot.config) ? snapshot.config : {};
+    const nextConfig = buildNextConfig(baseConfig);
+    const payload: Record<string, unknown> = {
+      raw: JSON.stringify(nextConfig, null, 2),
+    };
+    const requiresBaseHash = snapshot.exists !== false;
+    const baseHash = requiresBaseHash ? snapshot.hash?.trim() : undefined;
+    if (requiresBaseHash && !baseHash) {
+      throw new Error("Gateway config hash unavailable; re-run config.get.");
     }
+    if (baseHash) payload.baseHash = baseHash;
+    try {
+      await params.client.call("config.set", payload);
+    } catch (err) {
+      if (attempt < 1 && shouldRetryConfigWrite(err)) {
+        return attemptWrite(attempt + 1);
+      }
+      throw err;
+    }
+  };
 
-    return next;
-  });
-
-  const nextConfig = writeConfigAgentList(baseConfig, nextList);
-  await applyGatewayConfigSet({
-    client: params.client,
-    config: nextConfig,
-    baseHash: snapshot.hash ?? undefined,
-    exists: snapshot.exists,
-  });
+  await attemptWrite(0);
 };
