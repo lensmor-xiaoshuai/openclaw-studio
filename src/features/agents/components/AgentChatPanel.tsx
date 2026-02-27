@@ -13,7 +13,7 @@ import {
 import type { AgentState as AgentRecord } from "@/features/agents/state/store";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Check, ChevronRight, Clock, Cog, Pencil, Shuffle, X } from "lucide-react";
+import { Check, ChevronRight, Clock, Cog, Pencil, Shuffle, Trash2, X } from "lucide-react";
 import type { GatewayModelChoice } from "@/lib/gateway/models";
 import { rewriteMediaLinesToMarkdown } from "@/lib/text/media-markdown";
 import { normalizeAssistantDisplayText } from "@/lib/text/assistantText";
@@ -128,6 +128,7 @@ type AgentChatPanelProps = {
   onThinkingTracesToggle?: (enabled: boolean) => void;
   onDraftChange: (value: string) => void;
   onSend: (message: string) => void;
+  onRemoveQueuedMessage?: (index: number) => void;
   onStopRun: () => void;
   onAvatarShuffle: () => void;
   pendingExecApprovals?: PendingExecApproval[];
@@ -825,7 +826,6 @@ const AgentChatTranscript = memo(function AgentChatTranscript({
 });
 
 const noopToggle = () => {};
-
 const InlineHoverTooltip = ({
   text,
   children,
@@ -857,6 +857,8 @@ const AgentChatComposer = memo(function AgentChatComposer({
   stopDisabledReason,
   running,
   sendDisabled,
+  queuedMessages,
+  onRemoveQueuedMessage,
   inputRef,
   modelOptions,
   modelValue,
@@ -879,6 +881,8 @@ const AgentChatComposer = memo(function AgentChatComposer({
   stopDisabledReason?: string | null;
   running: boolean;
   sendDisabled: boolean;
+  queuedMessages: string[];
+  onRemoveQueuedMessage?: (index: number) => void;
   inputRef: (el: HTMLTextAreaElement | HTMLInputElement | null) => void;
   modelOptions: { value: string; label: string }[];
   modelValue: string;
@@ -920,6 +924,65 @@ const AgentChatComposer = memo(function AgentChatComposer({
   const thinkingSelectWidthCh = Math.max(9, Math.min(22, thinkingSelectedLabel.length + 6));
   return (
     <div className="rounded-2xl border border-border/65 bg-surface-2/45 px-3 py-2">
+      {queuedMessages.length > 0 ? (
+        <div
+          className={`mb-2 grid items-start gap-2 ${
+            running ? "grid-cols-[minmax(0,1fr)_auto_auto]" : "grid-cols-[minmax(0,1fr)_auto]"
+          }`}
+        >
+          <div
+            className="min-w-0 max-w-full space-y-1 overflow-hidden"
+            data-testid="queued-messages-bar"
+            aria-label="Queued messages"
+          >
+            {queuedMessages.map((queuedMessage, index) => (
+              <div
+                key={`${index}-${queuedMessage}`}
+                className="flex w-full min-w-0 max-w-full items-center gap-1 overflow-hidden rounded-md border border-border/70 bg-card/80 px-2 py-1 text-[11px] text-foreground"
+              >
+                <span className="font-mono text-[10px] uppercase tracking-[0.06em] text-muted-foreground">
+                  Queued
+                </span>
+                <span
+                  className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap"
+                  title={queuedMessage}
+                >
+                  {queuedMessage}
+                </span>
+                <button
+                  type="button"
+                  className="inline-flex h-4 w-4 flex-none items-center justify-center rounded-sm text-muted-foreground transition hover:bg-surface-2 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                  aria-label={`Remove queued message ${index + 1}`}
+                  onClick={() => onRemoveQueuedMessage?.(index)}
+                  disabled={!onRemoveQueuedMessage}
+                >
+                  <Trash2 className="h-3 w-3" />
+                </button>
+              </div>
+            ))}
+          </div>
+          {running ? (
+            <button
+              type="button"
+              aria-hidden="true"
+              tabIndex={-1}
+              disabled
+              className="invisible rounded-md border border-border/70 bg-surface-3 px-3 py-2 font-mono text-[12px] font-medium tracking-[0.02em] text-foreground"
+            >
+              {stopBusy ? "Stopping" : "Stop"}
+            </button>
+          ) : null}
+          <button
+            type="button"
+            aria-hidden="true"
+            tabIndex={-1}
+            disabled
+            className="ui-btn-primary ui-btn-send invisible px-3 py-2 font-mono text-[12px] font-medium tracking-[0.02em]"
+          >
+            Send
+          </button>
+        </div>
+      ) : null}
       <div className="flex items-end gap-2">
         <textarea
           ref={inputRef}
@@ -1052,6 +1115,7 @@ export const AgentChatPanel = ({
   onThinkingTracesToggle = noopToggle,
   onDraftChange,
   onSend,
+  onRemoveQueuedMessage,
   onStopRun,
   onAvatarShuffle,
   pendingExecApprovals = [],
@@ -1142,7 +1206,7 @@ export const AgentChatPanel = ({
 
   const handleSend = useCallback(
     (message: string) => {
-      if (!canSend || agent.status === "running") return;
+      if (!canSend) return;
       const trimmed = message.trim();
       if (!trimmed) return;
       plainDraftRef.current = "";
@@ -1151,7 +1215,7 @@ export const AgentChatPanel = ({
       scrollToBottomNextOutputRef.current = true;
       onSend(trimmed);
     },
-    [agent.status, canSend, onDraftChange, onSend]
+    [canSend, onDraftChange, onSend]
   );
 
   const chatItems = useMemo(
@@ -1204,7 +1268,7 @@ export const AgentChatPanel = ({
     () => resolveEmptyChatIntroMessage(agent.agentId, agent.sessionEpoch),
     [agent.agentId, agent.sessionEpoch]
   );
-  const sendDisabled = !canSend || running || !draftValue.trim();
+  const sendDisabled = !canSend || !draftValue.trim();
 
   const handleComposerChange = useCallback(
     (event: ChangeEvent<HTMLTextAreaElement>) => {
@@ -1476,6 +1540,8 @@ export const AgentChatPanel = ({
             stopDisabledReason={stopDisabledReason}
             running={running}
             sendDisabled={sendDisabled}
+            queuedMessages={agent.queuedMessages ?? []}
+            onRemoveQueuedMessage={onRemoveQueuedMessage}
             modelOptions={modelOptionsWithFallback.map((option) => ({
               value: option.value,
               label: option.label,

@@ -33,6 +33,7 @@ const createAgent = (overrides?: Partial<AgentState>): AgentState => {
     latestPreview: null,
     lastUserMessage: null,
     draft: "",
+    queuedMessages: [],
     sessionSettingsSynced: true,
     historyLoadedAt: null,
     historyFetchLimit: null,
@@ -58,7 +59,10 @@ type ControllerValue = ReturnType<typeof useChatInteractionController>;
 type GatewayStatus = "disconnected" | "connecting" | "connected";
 type InteractionDispatchAction =
   | { type: "updateAgent"; agentId: string; patch: Partial<AgentState> }
-  | { type: "appendOutput"; agentId: string; line: string };
+  | { type: "appendOutput"; agentId: string; line: string }
+  | { type: "enqueueQueuedMessage"; agentId: string; message: string }
+  | { type: "removeQueuedMessage"; agentId: string; index: number }
+  | { type: "shiftQueuedMessage"; agentId: string; expectedMessage?: string };
 type CallFn = (method: string, params: unknown) => Promise<unknown>;
 type DispatchFn = (action: InteractionDispatchAction) => void;
 type ErrorFn = (message: string) => void;
@@ -130,6 +134,7 @@ const renderController = (
         call,
       },
       status: overrides?.status ?? "connected",
+      agents,
       dispatch,
       setError,
       getAgents: () => agents,
@@ -284,6 +289,90 @@ describe("useChatInteractionController", () => {
           action.patch?.streamText === "pending stream"
       )
     ).toBe(false);
+  });
+
+  it("queues messages instead of sending while the agent is running", async () => {
+    const ctx = renderController({
+      agents: [createAgent({ status: "running", queuedMessages: [] })],
+    });
+
+    await act(async () => {
+      await ctx.getValue().handleSend("agent-1", "session-1", "  follow up  ");
+    });
+
+    expect(mockedSendChatMessageViaStudio).not.toHaveBeenCalled();
+    expect(ctx.dispatch).toHaveBeenCalledWith({
+      type: "enqueueQueuedMessage",
+      agentId: "agent-1",
+      message: "follow up",
+    });
+  });
+
+  it("drains one queued message when an agent becomes idle", async () => {
+    const ctx = renderController({
+      agents: [createAgent({ status: "running", queuedMessages: ["next message"] })],
+    });
+
+    act(() => {
+      ctx.setAgents([
+        createAgent({
+          status: "idle",
+          sessionKey: "agent:agent-1:studio:drain",
+          queuedMessages: ["next message"],
+        }),
+      ]);
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(ctx.dispatch).toHaveBeenCalledWith({
+      type: "shiftQueuedMessage",
+      agentId: "agent-1",
+      expectedMessage: "next message",
+    });
+    expect(mockedSendChatMessageViaStudio).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agentId: "agent-1",
+        sessionKey: "agent:agent-1:studio:drain",
+        message: "next message",
+      })
+    );
+  });
+
+  it("does not drain queued messages while disconnected", async () => {
+    const ctx = renderController({
+      status: "disconnected",
+      agents: [createAgent({ status: "idle", queuedMessages: ["keep queued"] })],
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(mockedSendChatMessageViaStudio).not.toHaveBeenCalled();
+    expect(
+      ctx.dispatch.mock.calls.some(
+        ([action]: [InteractionDispatchAction]) => action.type === "shiftQueuedMessage"
+      )
+    ).toBe(false);
+  });
+
+  it("removes a queued message by index", () => {
+    const ctx = renderController({
+      agents: [createAgent({ queuedMessages: ["first", "second"] })],
+    });
+
+    act(() => {
+      ctx.getValue().removeQueuedMessage("agent-1", 0);
+    });
+
+    expect(ctx.dispatch).toHaveBeenCalledWith({
+      type: "removeQueuedMessage",
+      agentId: "agent-1",
+      index: 0,
+    });
   });
 
   it("deduplicates stop-run while busy and clears busy state after success", async () => {

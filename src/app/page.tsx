@@ -759,6 +759,7 @@ const AgentStudioPage = () => {
     flushPendingDraft,
     handleDraftChange,
     handleSend,
+    removeQueuedMessage,
     handleNewSession,
     handleStopRun,
     queueLivePatch,
@@ -766,6 +767,7 @@ const AgentStudioPage = () => {
   } = useChatInteractionController({
     client,
     status,
+    agents,
     dispatch,
     setError,
     getAgents: () => stateRef.current.agents,
@@ -1659,6 +1661,9 @@ const AgentStudioPage = () => {
                         onDraftChange={(value) => handleDraftChange(focusedAgent.agentId, value)}
                         onSend={(message) =>
                           handleSend(focusedAgent.agentId, focusedAgent.sessionKey, message)
+                        }
+                        onRemoveQueuedMessage={(index) =>
+                          removeQueuedMessage(focusedAgent.agentId, index)
                         }
                         onStopRun={() => handleStopRun(focusedAgent.agentId, focusedAgent.sessionKey)}
                         onAvatarShuffle={() => handleAvatarShuffle(focusedAgent.agentId)}

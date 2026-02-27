@@ -14,7 +14,10 @@ import type { GatewayStatus } from "@/lib/gateway/GatewayClient";
 
 type ChatInteractionDispatchAction =
   | { type: "updateAgent"; agentId: string; patch: Partial<AgentState> }
-  | { type: "appendOutput"; agentId: string; line: string };
+  | { type: "appendOutput"; agentId: string; line: string }
+  | { type: "enqueueQueuedMessage"; agentId: string; message: string }
+  | { type: "removeQueuedMessage"; agentId: string; index: number }
+  | { type: "shiftQueuedMessage"; agentId: string; expectedMessage?: string };
 
 type GatewayClientLike = {
   call: (method: string, params: unknown) => Promise<unknown>;
@@ -23,6 +26,7 @@ type GatewayClientLike = {
 export type UseChatInteractionControllerParams = {
   client: GatewayClientLike;
   status: GatewayStatus;
+  agents: AgentState[];
   dispatch: (action: ChatInteractionDispatchAction) => void;
   setError: (message: string) => void;
   getAgents: () => AgentState[];
@@ -40,6 +44,7 @@ export type ChatInteractionController = {
   flushPendingDraft: (agentId: string | null) => void;
   handleDraftChange: (agentId: string, value: string) => void;
   handleSend: (agentId: string, sessionKey: string, message: string) => Promise<void>;
+  removeQueuedMessage: (agentId: string, index: number) => void;
   handleNewSession: (agentId: string) => Promise<void>;
   handleStopRun: (agentId: string, sessionKey: string) => Promise<void>;
   queueLivePatch: (agentId: string, patch: Partial<AgentState>) => void;
@@ -54,6 +59,7 @@ export function useChatInteractionController(
   const pendingDraftValuesRef = useRef<Map<string, string>>(new Map());
   const pendingDraftTimersRef = useRef<Map<string, number>>(new Map());
   const pendingLivePatchesRef = useRef<Map<string, Partial<AgentState>>>(new Map());
+  const activeQueueSendAgentIdsRef = useRef<Set<string>>(new Set());
   const flushLivePatchesRef = useRef<() => void>(() => {});
   const livePatchBatcherRef = useRef(createRafBatcher(() => flushLivePatchesRef.current()));
 
@@ -189,7 +195,27 @@ export function useChatInteractionController(
         pendingDraftTimersRef.current.delete(agentId);
       }
       pendingDraftValuesRef.current.delete(agentId);
-      clearPendingLivePatch(agentId);
+      const agent =
+        params.agents.find((entry) => entry.agentId === agentId) ??
+        params.getAgents().find((entry) => entry.agentId === agentId) ??
+        null;
+      if (!agent) {
+        params.dispatch({
+          type: "appendOutput",
+          agentId,
+          line: "Error: Agent not found.",
+        });
+        return;
+      }
+      if (agent.status === "running") {
+        params.dispatch({
+          type: "enqueueQueuedMessage",
+          agentId,
+          message: trimmed,
+        });
+        return;
+      }
+      clearPendingLivePatch(agent.agentId);
       await sendChatMessageViaStudio({
         client: params.client,
         dispatch: params.dispatch,
@@ -203,6 +229,65 @@ export function useChatInteractionController(
     },
     [clearPendingLivePatch, params]
   );
+
+  const removeQueuedMessage = useCallback(
+    (agentId: string, index: number) => {
+      if (!Number.isInteger(index) || index < 0) return;
+      params.dispatch({
+        type: "removeQueuedMessage",
+        agentId,
+        index,
+      });
+    },
+    [params]
+  );
+
+  const sendNextQueuedMessage = useCallback(
+    async (agent: Pick<AgentState, "agentId" | "sessionKey"> & { nextMessage: string }) => {
+      if (params.status !== "connected") return;
+      const nextMessage = agent.nextMessage.trim();
+      if (!nextMessage) return;
+      params.dispatch({
+        type: "shiftQueuedMessage",
+        agentId: agent.agentId,
+        expectedMessage: nextMessage,
+      });
+      clearPendingLivePatch(agent.agentId);
+      await sendChatMessageViaStudio({
+        client: params.client,
+        dispatch: params.dispatch,
+        getAgent: (currentAgentId) =>
+          params.getAgents().find((entry) => entry.agentId === currentAgentId) ?? null,
+        agentId: agent.agentId,
+        sessionKey: agent.sessionKey,
+        message: nextMessage,
+        clearRunTracking: (runId) => params.clearRunTracking(runId),
+      });
+    },
+    [clearPendingLivePatch, params]
+  );
+
+  useEffect(() => {
+    if (params.status !== "connected") return;
+    for (const agent of params.agents) {
+      if (agent.status !== "idle") continue;
+      const nextMessage = agent.queuedMessages?.[0];
+      if (!nextMessage) continue;
+      if (activeQueueSendAgentIdsRef.current.has(agent.agentId)) continue;
+      activeQueueSendAgentIdsRef.current.add(agent.agentId);
+      void (async () => {
+        try {
+          await sendNextQueuedMessage({
+            agentId: agent.agentId,
+            sessionKey: agent.sessionKey,
+            nextMessage,
+          });
+        } finally {
+          activeQueueSendAgentIdsRef.current.delete(agent.agentId);
+        }
+      })();
+    }
+  }, [params.agents, params.status, sendNextQueuedMessage]);
 
   const handleStopRun = useCallback(
     async (agentId: string, sessionKey: string) => {
@@ -294,6 +379,7 @@ export function useChatInteractionController(
     flushPendingDraft,
     handleDraftChange,
     handleSend,
+    removeQueuedMessage,
     handleNewSession,
     handleStopRun,
     queueLivePatch,

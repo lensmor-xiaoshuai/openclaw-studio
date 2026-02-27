@@ -178,4 +178,30 @@ describe("studioBootstrapWorkflow", () => {
       focusFilter: "all",
     });
   });
+
+  it("restores running filter as all", () => {
+    const settings: StudioSettings = {
+      version: 1,
+      gateway: null,
+      focused: {
+        "https://gateway.test": {
+          mode: "focused",
+          selectedAgentId: "agent-7",
+          filter: "running",
+        },
+      },
+      avatars: {},
+    };
+
+    expect(
+      planFocusedPreferenceRestore({
+        settings,
+        gatewayKey: "https://gateway.test",
+        focusFilterTouched: false,
+      })
+    ).toEqual({
+      preferredSelectedAgentId: "agent-7",
+      focusFilter: "all",
+    });
+  });
 });

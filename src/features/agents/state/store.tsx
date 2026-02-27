@@ -56,6 +56,7 @@ export type AgentState = AgentStoreSeed & {
   latestPreview: string | null;
   lastUserMessage: string | null;
   draft: string;
+  queuedMessages?: string[];
   sessionSettingsSynced: boolean;
   historyLoadedAt: number | null;
   historyFetchLimit: number | null;
@@ -89,6 +90,7 @@ export const buildNewSessionAgentPatch = (agent: AgentState): Partial<AgentState
     latestPreview: null,
     lastUserMessage: null,
     draft: "",
+    queuedMessages: [],
     historyLoadedAt: null,
     historyFetchLimit: null,
     historyFetchedCount: null,
@@ -119,6 +121,9 @@ type Action =
   | { type: "setLoading"; loading: boolean }
   | { type: "updateAgent"; agentId: string; patch: Partial<AgentState> }
   | { type: "appendOutput"; agentId: string; line: string; transcript?: TranscriptAppendMeta }
+  | { type: "enqueueQueuedMessage"; agentId: string; message: string }
+  | { type: "removeQueuedMessage"; agentId: string; index: number }
+  | { type: "shiftQueuedMessage"; agentId: string; expectedMessage?: string }
   | { type: "markActivity"; agentId: string; at?: number }
   | { type: "selectAgent"; agentId: string | null };
 
@@ -164,6 +169,7 @@ const createRuntimeAgentState = (
 ): AgentState => {
   const sameSessionKey = existing?.sessionKey === seed.sessionKey;
   const outputLines = sameSessionKey ? (existing?.outputLines ?? []) : [];
+  const queuedMessages = sameSessionKey ? [...(existing?.queuedMessages ?? [])] : [];
   const transcriptEntries = sameSessionKey
     ? Array.isArray(existing?.transcriptEntries)
       ? existing.transcriptEntries
@@ -202,6 +208,7 @@ const createRuntimeAgentState = (
     latestPreview: sameSessionKey ? (existing?.latestPreview ?? null) : null,
     lastUserMessage: sameSessionKey ? (existing?.lastUserMessage ?? null) : null,
     draft: sameSessionKey ? (existing?.draft ?? "") : "",
+    queuedMessages,
     sessionSettingsSynced: sameSessionKey ? (existing?.sessionSettingsSynced ?? false) : false,
     historyLoadedAt: sameSessionKey ? (existing?.historyLoadedAt ?? null) : null,
     historyFetchLimit: sameSessionKey ? (existing?.historyFetchLimit ?? null) : null,
@@ -398,6 +405,47 @@ const reducer = (state: AgentStoreState, action: Action): AgentStoreState => {
               nextEntry.sequenceKey + 1
             ),
           };
+        }),
+      };
+    case "enqueueQueuedMessage":
+      return {
+        ...state,
+        agents: state.agents.map((agent) => {
+          if (agent.agentId !== action.agentId) return agent;
+          const message = action.message.trim();
+          if (!message) return agent;
+          const queuedMessages = [...(agent.queuedMessages ?? []), message];
+          return { ...agent, queuedMessages };
+        }),
+      };
+    case "removeQueuedMessage":
+      return {
+        ...state,
+        agents: state.agents.map((agent) => {
+          if (agent.agentId !== action.agentId) return agent;
+          if (!Number.isInteger(action.index) || action.index < 0) return agent;
+          const queuedMessages = agent.queuedMessages ?? [];
+          if (action.index >= queuedMessages.length) return agent;
+          return {
+            ...agent,
+            queuedMessages: queuedMessages.filter((_, index) => index !== action.index),
+          };
+        }),
+      };
+    case "shiftQueuedMessage":
+      return {
+        ...state,
+        agents: state.agents.map((agent) => {
+          if (agent.agentId !== action.agentId) return agent;
+          const queuedMessages = agent.queuedMessages ?? [];
+          if (queuedMessages.length === 0) return agent;
+          if (
+            action.expectedMessage !== undefined &&
+            action.expectedMessage.trim() !== queuedMessages[0]
+          ) {
+            return agent;
+          }
+          return { ...agent, queuedMessages: queuedMessages.slice(1) };
         }),
       };
     case "markActivity": {

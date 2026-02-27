@@ -329,6 +329,59 @@ describe("AgentChatPanel controls", () => {
     expect(onStopRun).toHaveBeenCalledTimes(1);
   });
 
+  it("allows_send_while_running_so_follow_up_can_be_queued", () => {
+    const onSend = vi.fn();
+    render(
+      createElement(AgentChatPanel, {
+        agent: { ...createAgent(), status: "running" },
+        isSelected: true,
+        canSend: true,
+        models,
+        stopBusy: false,
+        onLoadMoreHistory: vi.fn(),
+        onOpenSettings: vi.fn(),
+        onModelChange: vi.fn(),
+        onThinkingChange: vi.fn(),
+        onDraftChange: vi.fn(),
+        onSend,
+        onStopRun: vi.fn(),
+        onAvatarShuffle: vi.fn(),
+      })
+    );
+
+    const textarea = screen.getByPlaceholderText("type a message");
+    fireEvent.change(textarea, { target: { value: "follow up" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    expect(onSend).toHaveBeenCalledWith("follow up");
+  });
+
+  it("renders_queue_bar_and_supports_removing_queued_messages", () => {
+    const onRemoveQueuedMessage = vi.fn();
+    render(
+      createElement(AgentChatPanel, {
+        agent: { ...createAgent(), queuedMessages: ["first queued", "second queued"] },
+        isSelected: true,
+        canSend: true,
+        models,
+        stopBusy: false,
+        onLoadMoreHistory: vi.fn(),
+        onOpenSettings: vi.fn(),
+        onModelChange: vi.fn(),
+        onThinkingChange: vi.fn(),
+        onDraftChange: vi.fn(),
+        onSend: vi.fn(),
+        onRemoveQueuedMessage,
+        onStopRun: vi.fn(),
+        onAvatarShuffle: vi.fn(),
+      })
+    );
+
+    expect(screen.getByTestId("queued-messages-bar")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Remove queued message 1" }));
+    expect(onRemoveQueuedMessage).toHaveBeenCalledWith(0);
+  });
+
   it("disables_stop_button_with_tooltip_when_stop_is_unavailable", () => {
     const stopDisabledReason =
       "This task is running as an automatic heartbeat check. Stopping heartbeat runs from Studio isn't available yet (coming soon).";

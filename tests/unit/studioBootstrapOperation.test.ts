@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { AgentState, AgentStoreSeed } from "@/features/agents/state/store";
+import type { AgentStoreSeed } from "@/features/agents/state/store";
 import type { GatewayModelPolicySnapshot } from "@/lib/gateway/models";
 import type { StudioSettingsPatch } from "@/lib/studio/settings";
 
@@ -174,7 +174,7 @@ describe("studioBootstrapOperation", () => {
       },
       {
         kind: "set-focus-filter",
-        filter: "running",
+        filter: "all",
       },
       {
         kind: "set-focused-preferences-loaded",
