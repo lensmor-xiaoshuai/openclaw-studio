@@ -1,5 +1,5 @@
 import type { ControlPlaneOutboxEntry } from "@/lib/controlplane/contracts";
-import { getControlPlaneRuntime, isStudioDomainApiModeEnabled } from "@/lib/controlplane/runtime";
+import { bootstrapDomainRuntime } from "@/lib/controlplane/runtime-route-bootstrap";
 
 export const runtime = "nodejs";
 
@@ -26,34 +26,44 @@ const toSseFrame = (entry: ControlPlaneOutboxEntry): Uint8Array => {
 const heartbeatFrame = (): Uint8Array => encoder.encode(": heartbeat\n\n");
 
 export async function GET(request: Request) {
-  if (!isStudioDomainApiModeEnabled()) {
+  const bootstrap = await bootstrapDomainRuntime();
+  if (bootstrap.kind === "mode-disabled") {
     return new Response(
       JSON.stringify({ enabled: false, error: "domain_api_mode_disabled" }),
       { status: 404, headers: { "content-type": "application/json; charset=utf-8" } }
     );
   }
-
-  const controlPlane = getControlPlaneRuntime();
-  try {
-    await controlPlane.ensureStarted();
-  } catch (err) {
+  if (bootstrap.kind === "runtime-init-failed") {
     return new Response(
       JSON.stringify({
         enabled: true,
-        error: err instanceof Error ? err.message : "controlplane_start_failed",
+        error: bootstrap.message,
+        code: "CONTROLPLANE_RUNTIME_INIT_FAILED",
+        reason: "runtime_init_failed",
       }),
       { status: 503, headers: { "content-type": "application/json; charset=utf-8" } }
     );
   }
-
+  if (bootstrap.kind === "start-failed") {
+    return new Response(
+      JSON.stringify({
+        enabled: true,
+        error: bootstrap.message,
+      }),
+      { status: 503, headers: { "content-type": "application/json; charset=utf-8" } }
+    );
+  }
+  const controlPlane = bootstrap.runtime;
   const lastSeenId = parseLastEventId(request);
-  const replayEntries = controlPlane.eventsAfter(lastSeenId, REPLAY_LIMIT);
 
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
       let closed = false;
       let unsubscribe: () => void = () => {};
       let heartbeat: ReturnType<typeof setInterval> | null = null;
+      let startupPhase = true;
+      let lastDeliveredId = lastSeenId;
+      const startupLiveBuffer: ControlPlaneOutboxEntry[] = [];
       const close = () => {
         if (closed) return;
         closed = true;
@@ -64,21 +74,67 @@ export async function GET(request: Request) {
         }
         try {
           controller.close();
-        } catch {}
+        } catch (err) {
+          console.error("Failed to close runtime stream controller.", err);
+        }
+      };
+      const enqueueFrame = (frame: Uint8Array): boolean => {
+        if (closed) return false;
+        try {
+          controller.enqueue(frame);
+          return true;
+        } catch (err) {
+          console.error("Failed to enqueue runtime stream frame.", err);
+          close();
+          return false;
+        }
+      };
+      const emitEntry = (entry: ControlPlaneOutboxEntry): boolean => {
+        if (entry.id <= lastDeliveredId) {
+          return true;
+        }
+        if (!enqueueFrame(toSseFrame(entry))) {
+          return false;
+        }
+        lastDeliveredId = entry.id;
+        return true;
       };
 
-      for (const entry of replayEntries) {
-        controller.enqueue(toSseFrame(entry));
-      }
-
       unsubscribe = controlPlane.subscribe((entry) => {
-        if (closed) return;
-        controller.enqueue(toSseFrame(entry));
+        if (closed) {
+          return;
+        }
+        if (startupPhase) {
+          startupLiveBuffer.push(entry);
+          return;
+        }
+        emitEntry(entry);
       });
 
+      if (lastSeenId <= 0) {
+        const snapshot = controlPlane.snapshot();
+        lastDeliveredId = Math.max(0, snapshot.outboxHead - REPLAY_LIMIT);
+      }
+
+      const replayEntries = controlPlane.eventsAfter(lastDeliveredId, REPLAY_LIMIT);
+      for (const entry of replayEntries) {
+        if (!emitEntry(entry)) {
+          return;
+        }
+      }
+
+      startupLiveBuffer.sort((left, right) => left.id - right.id);
+      for (const entry of startupLiveBuffer) {
+        if (!emitEntry(entry)) {
+          return;
+        }
+      }
+      startupLiveBuffer.length = 0;
+
+      startupPhase = false;
+
       heartbeat = setInterval(() => {
-        if (closed) return;
-        controller.enqueue(heartbeatFrame());
+        enqueueFrame(heartbeatFrame());
       }, HEARTBEAT_INTERVAL_MS);
 
       request.signal.addEventListener("abort", close, { once: true });
