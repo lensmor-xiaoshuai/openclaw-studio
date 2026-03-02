@@ -5,17 +5,12 @@ import {
   updatePendingApprovalById,
 } from "@/features/agents/approvals/pendingStore";
 import { shouldTreatExecApprovalResolveErrorAsUnknownId } from "@/features/agents/approvals/execApprovalLifecycleWorkflow";
-import { isStudioDomainIntentModeEnabled } from "@/lib/controlplane/domain-mode";
-import { postStudioIntent } from "@/lib/controlplane/intents-client";
-
-type GatewayClientLike = {
-  call: (method: string, params: unknown) => Promise<unknown>;
-};
+import type { RuntimeWriteTransport } from "@/features/agents/operations/runtimeWriteTransport";
 
 type SetState<T> = (next: T | ((current: T) => T)) => void;
 
 export const resolveExecApprovalViaStudio = async (params: {
-  client: GatewayClientLike;
+  runtimeWriteTransport: RuntimeWriteTransport;
   approvalId: string;
   decision: ExecApprovalDecision;
   getAgents: () => AgentState[];
@@ -35,11 +30,9 @@ export const resolveExecApprovalViaStudio = async (params: {
   isDisconnectLikeError: (error: unknown) => boolean;
   shouldTreatUnknownId?: (error: unknown) => boolean;
   logWarn?: (message: string, error: unknown) => void;
-  useDomainIntents?: boolean;
 }): Promise<void> => {
   const id = params.approvalId.trim();
   if (!id) return;
-  const useDomainIntents = params.useDomainIntents ?? isStudioDomainIntentModeEnabled();
 
   const resolvePendingApproval = (
     approvalId: string,
@@ -118,11 +111,7 @@ export const resolveExecApprovalViaStudio = async (params: {
   setLocalApprovalState(true, null);
 
   try {
-    if (useDomainIntents) {
-      await postStudioIntent("/api/intents/exec-approval-resolve", { id, decision: params.decision });
-    } else {
-      await params.client.call("exec.approval.resolve", { id, decision: params.decision });
-    }
+    await params.runtimeWriteTransport.execApprovalResolve({ id, decision: params.decision });
     removeLocalApproval(id);
 
     if (params.decision !== "allow-once" && params.decision !== "allow-always") {
@@ -138,7 +127,7 @@ export const resolveExecApprovalViaStudio = async (params: {
     const activeRunId = latest?.runId?.trim() ?? "";
     if (activeRunId) {
       try {
-        await params.client.call("agent.wait", { runId: activeRunId, timeoutMs: 15_000 });
+        await params.runtimeWriteTransport.agentWait({ runId: activeRunId, timeoutMs: 15_000 });
       } catch (waitError) {
         if (!params.isDisconnectLikeError(waitError)) {
           (params.logWarn ?? ((message, error) => console.warn(message, error)))(

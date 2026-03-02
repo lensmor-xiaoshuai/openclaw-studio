@@ -1,21 +1,27 @@
 import { expect, test } from "@playwright/test";
 import { stubStudioRoute } from "./helpers/studioRoute";
+import { stubRuntimeRoutes } from "./helpers/runtimeRoute";
 
 test.beforeEach(async ({ page }) => {
   await stubStudioRoute(page);
+  await stubRuntimeRoutes(page);
 });
 
 test("shows_disconnected_connect_surface", async ({ page }) => {
   await page.goto("/");
 
-  await expect(page.getByLabel("Upstream URL")).toBeVisible();
-  await expect(page.getByRole("button", { name: /^(Connect|Connecting…)$/ })).toBeVisible();
+  await page.getByTestId("studio-menu-toggle").click();
+  await page.getByTestId("gateway-settings-toggle").click();
+  await expect(page.getByLabel(/Upstream (gateway )?URL/i)).toBeVisible();
+  await expect(page.getByRole("button", { name: /^(Connect|Disconnect|Connecting…)$/ })).toBeVisible();
 });
 
 test("persists_gateway_fields_to_studio_settings", async ({ page }) => {
   await page.goto("/");
 
-  await page.getByLabel("Upstream URL").fill("ws://gateway.example:18789");
+  await page.getByTestId("studio-menu-toggle").click();
+  await page.getByTestId("gateway-settings-toggle").click();
+  await page.getByLabel(/Upstream (gateway )?URL/i).fill("ws://gateway.example:18789");
   await page.getByLabel("Upstream token").fill("token-123");
 
   const request = await page.waitForRequest((req) => {

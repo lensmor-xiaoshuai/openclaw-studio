@@ -317,7 +317,7 @@ async function signDevicePayload(privateKeyBase64Url: string, payload: string) {
   return base64UrlEncode(sig);
 }
 
-export type GatewayEventFrame = {
+type GatewayEventFrame = {
   type: "event";
   event: string;
   payload?: unknown;
@@ -325,7 +325,7 @@ export type GatewayEventFrame = {
   stateVersion?: { presence: number; health: number };
 };
 
-export type GatewayResponseFrame = {
+type GatewayResponseFrame = {
   type: "res";
   id: string;
   ok: boolean;
@@ -352,7 +352,7 @@ type Pending = {
   reject: (err: unknown) => void;
 };
 
-export type GatewayBrowserClientOptions = {
+type GatewayBrowserClientOptions = {
   url: string;
   token?: string;
   password?: string;

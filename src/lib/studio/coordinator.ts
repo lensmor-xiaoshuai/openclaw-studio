@@ -15,7 +15,7 @@ export type StudioSettingsResponse = {
 type FocusedPatch = Record<string, Partial<StudioFocusedPreference> | null>;
 type AvatarsPatch = Record<string, Record<string, string | null> | null>;
 
-export type StudioSettingsCoordinatorTransport = {
+type StudioSettingsCoordinatorTransport = {
   fetchSettings: () => Promise<StudioSettingsResponse>;
   updateSettings: (patch: StudioSettingsPatch) => Promise<StudioSettingsResponse>;
 };

@@ -2,7 +2,15 @@
   "name": "openclaw-studio",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=20.9.0"
+  },
   "scripts": {
+    "verify:native-runtime:check": "node scripts/verify-native-runtime.mjs --check",
+    "verify:native-runtime:repair": "node scripts/verify-native-runtime.mjs --repair",
+    "predev": "npm run verify:native-runtime:repair",
+    "predev:turbo": "npm run verify:native-runtime:repair",
+    "prestart": "npm run verify:native-runtime:check",
     "dev": "node server/index.js --dev",
     "dev:turbo": "node server/index.js --dev",
     "build": "next build",
@@ -15,7 +23,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest",
     "e2e": "playwright test",
-    "pw:open:max": "scripts/playwright-open-maximized.sh"
+    "pw:open:max": "bash scripts/playwright-open-maximized.sh"
   },
   "dependencies": {
     "@multiavatar/multiavatar": "github:multiavatar/Multiavatar",
@@ -46,6 +54,7 @@
     "eslint-config-next": "16.1.6",
     "eslint-config-prettier": "^10.1.8",
     "jsdom": "^27.4.0",
+    "postcss": "^8.5.6",
     "tailwindcss": "^4",
     "typescript": "^5",
     "vitest": "^4.0.18"

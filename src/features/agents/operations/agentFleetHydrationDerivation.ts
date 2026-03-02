@@ -159,7 +159,7 @@ const resolveDefaultModelForAgent = (
   return resolveConfiguredModelKey(raw, modelAliases);
 };
 
-export type DeriveFleetHydrationInput = {
+type DeriveFleetHydrationInput = {
   gatewayUrl: string;
   configSnapshot: GatewayModelPolicySnapshot | null;
   settings: StudioSettings | null;
@@ -170,7 +170,7 @@ export type DeriveFleetHydrationInput = {
   previewResult: SummaryPreviewSnapshot | null;
 };
 
-export type DerivedHydrateAgentFleetResult = {
+type DerivedHydrateAgentFleetResult = {
   seeds: AgentStoreSeed[];
   sessionCreatedAgentIds: string[];
   sessionSettingsSyncedAgentIds: string[];

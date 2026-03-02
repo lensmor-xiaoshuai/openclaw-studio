@@ -1,4 +1,4 @@
-export type CreateBootstrapFacts = {
+type CreateBootstrapFacts = {
   completion: { agentId: string; agentName: string };
   createdAgent: { agentId: string; sessionKey: string } | null;
   bootstrapErrorMessage: string | null;

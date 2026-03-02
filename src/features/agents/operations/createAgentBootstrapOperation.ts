@@ -8,6 +8,7 @@ import {
   planCreateAgentBootstrapCommands,
   type CreateBootstrapCommand,
 } from "@/features/agents/operations/createAgentBootstrapWorkflow";
+import type { RuntimeWriteTransport } from "@/features/agents/operations/runtimeWriteTransport";
 
 type CreateCompletion = {
   agentId: string;
@@ -31,6 +32,7 @@ const resolveBootstrapErrorMessage = (error: unknown): string => {
 
 export async function applyCreateAgentBootstrapPermissions(params: {
   client: GatewayClient;
+  runtimeWriteTransport: RuntimeWriteTransport;
   agentId: string;
   sessionKey: string;
   draft: AgentPermissionsDraft;
@@ -38,6 +40,7 @@ export async function applyCreateAgentBootstrapPermissions(params: {
 }): Promise<void> {
   await updateAgentPermissionsViaStudio({
     client: params.client,
+    runtimeWriteTransport: params.runtimeWriteTransport,
     agentId: params.agentId,
     sessionKey: params.sessionKey,
     draft: params.draft,

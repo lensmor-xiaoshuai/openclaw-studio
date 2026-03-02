@@ -19,7 +19,7 @@ type GuardedActionKind =
   | "save-skill-api-key";
 type CronActionKind = "run-cron-job" | "delete-cron-job";
 
-export type AgentSettingsMutationRequest =
+type AgentSettingsMutationRequest =
   | { kind: GuardedActionKind; agentId: string; skillName?: string; skillKey?: string }
   | { kind: "create-cron-job"; agentId: string }
   | { kind: CronActionKind; agentId: string; jobId: string };
@@ -34,7 +34,7 @@ export type AgentSettingsMutationContext = {
   cronDeleteBusyJobId: string | null;
 };
 
-export type AgentSettingsMutationDenyReason =
+type AgentSettingsMutationDenyReason =
   | "start-guard-deny"
   | "reserved-main-delete"
   | "cron-action-busy"
@@ -43,7 +43,7 @@ export type AgentSettingsMutationDenyReason =
   | "missing-skill-name"
   | "missing-skill-key";
 
-export type AgentSettingsMutationDecision =
+type AgentSettingsMutationDecision =
   | {
       kind: "allow";
       normalizedAgentId: string;

@@ -1,6 +1,6 @@
 import type { GatewayStatus } from "@/lib/gateway/GatewayClient";
 
-export type StopRunIntent =
+type StopRunIntent =
   | { kind: "deny"; reason: "not-connected" | "missing-session-key"; message: string }
   | { kind: "skip-busy" }
   | { kind: "allow"; sessionKey: string };
@@ -35,7 +35,7 @@ export const planStopRunIntent = (input: {
   };
 };
 
-export type NewSessionIntent =
+type NewSessionIntent =
   | { kind: "deny"; reason: "missing-agent" | "missing-session-key"; message: string }
   | { kind: "allow"; sessionKey: string };
 
@@ -64,7 +64,7 @@ export const planNewSessionIntent = (input: {
   };
 };
 
-export type DraftFlushIntent =
+type DraftFlushIntent =
   | { kind: "skip"; reason: "missing-agent-id" | "missing-pending-value" }
   | { kind: "flush"; agentId: string };
 
@@ -90,7 +90,7 @@ export const planDraftFlushIntent = (input: {
   };
 };
 
-export type DraftTimerIntent =
+type DraftTimerIntent =
   | { kind: "skip"; reason: "missing-agent-id" }
   | { kind: "schedule"; agentId: string; delayMs: number };
 

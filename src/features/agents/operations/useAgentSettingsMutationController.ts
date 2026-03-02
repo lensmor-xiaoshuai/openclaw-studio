@@ -17,6 +17,7 @@ import {
 import type { SettingsRouteTab } from "@/features/agents/operations/settingsRouteWorkflow";
 import type { ConfigMutationKind } from "@/features/agents/operations/useConfigMutationQueue";
 import { useGatewayRestartBlock } from "@/features/agents/operations/useGatewayRestartBlock";
+import type { RuntimeWriteTransport } from "@/features/agents/operations/runtimeWriteTransport";
 import type { AgentState } from "@/features/agents/state/store";
 import type { CronCreateDraft } from "@/lib/cron/createPayloadBuilder";
 import {
@@ -32,12 +33,9 @@ import { isGatewayDisconnectLikeError } from "@/lib/gateway/GatewayClient";
 import type { GatewayModelPolicySnapshot } from "@/lib/gateway/models";
 import {
   readGatewayAgentSkillsAllowlist,
-  renameGatewayAgent,
   updateGatewayAgentSkillsAllowlist,
 } from "@/lib/gateway/agentConfig";
 import { fetchJson } from "@/lib/http";
-import { isStudioDomainIntentModeEnabled } from "@/lib/controlplane/domain-mode";
-import { postStudioIntent } from "@/lib/controlplane/intents-client";
 import { canRemoveSkillSource, filterOsCompatibleSkills } from "@/lib/skills/presentation";
 import { removeSkillFromGateway } from "@/lib/skills/remove";
 import {
@@ -48,14 +46,15 @@ import {
   type SkillStatusReport,
 } from "@/lib/skills/types";
 
-export type RestartingMutationBlockState = MutationBlockState & { kind: MutationWorkflowKind };
-export type SkillSetupMessage = { kind: "success" | "error"; message: string };
-export type SkillSetupMessageMap = Record<string, SkillSetupMessage>;
+type RestartingMutationBlockState = MutationBlockState & { kind: MutationWorkflowKind };
+type SkillSetupMessage = { kind: "success" | "error"; message: string };
+type SkillSetupMessageMap = Record<string, SkillSetupMessage>;
 
 type AgentForSettingsMutation = Pick<AgentState, "agentId" | "name" | "sessionKey">;
 
-export type UseAgentSettingsMutationControllerParams = {
+type UseAgentSettingsMutationControllerParams = {
   client: GatewayClient;
+  runtimeWriteTransport: RuntimeWriteTransport;
   status: GatewayStatus;
   isLocalGateway: boolean;
   agents: AgentForSettingsMutation[];
@@ -77,10 +76,10 @@ export type UseAgentSettingsMutationControllerParams = {
   dispatchUpdateAgent: (agentId: string, patch: Partial<AgentState>) => void;
   setMobilePaneChat: () => void;
   setError: (message: string) => void;
+  useDomainIntents: boolean;
 };
 
 export function useAgentSettingsMutationController(params: UseAgentSettingsMutationControllerParams) {
-  const useDomainIntents = isStudioDomainIntentModeEnabled();
   const skillsLoadRequestIdRef = useRef(0);
   const [settingsSkillsReport, setSettingsSkillsReport] = useState<SkillStatusReport | null>(null);
   const [settingsSkillsLoading, setSettingsSkillsLoading] = useState(false);
@@ -110,7 +109,7 @@ export function useAgentSettingsMutationController(params: UseAgentSettingsMutat
 
   const mutationContext: AgentSettingsMutationContext = useMemo(
     () => ({
-      status: useDomainIntents ? "connected" : params.status,
+      status: params.useDomainIntents ? "connected" : params.status,
       hasCreateBlock: params.hasCreateBlock,
       hasRenameBlock: hasRenameMutationBlock,
       hasDeleteBlock: hasDeleteMutationBlock,
@@ -126,7 +125,7 @@ export function useAgentSettingsMutationController(params: UseAgentSettingsMutat
       hasRenameMutationBlock,
       params.hasCreateBlock,
       params.status,
-      useDomainIntents,
+      params.useDomainIntents,
     ]
   );
 
@@ -384,25 +383,30 @@ export function useAgentSettingsMutationController(params: UseAgentSettingsMutat
     },
   });
 
+  const connectedStatus = params.status;
+  const settingsAgents = params.agents;
+  const loadAgents = params.loadAgents;
+  const setMobilePaneChat = params.setMobilePaneChat;
+
   useEffect(() => {
     if (!restartingMutationBlock) return;
     if (restartingMutationBlock.kind !== "delete-agent") return;
     if (restartingMutationBlock.phase !== "awaiting-restart") return;
-    if (params.status !== "connected") return;
+    if (connectedStatus !== "connected") return;
 
-    const deletedAgentStillPresent = params.agents.some(
+    const deletedAgentStillPresent = settingsAgents.some(
       (entry) => entry.agentId === restartingMutationBlock.agentId
     );
     if (!deletedAgentStillPresent) {
       setRestartingMutationBlock(null);
-      params.setMobilePaneChat();
+      setMobilePaneChat();
       return;
     }
 
     let cancelled = false;
     const refreshAgents = async () => {
       try {
-        await params.loadAgents();
+        await loadAgents();
       } catch (error) {
         if (!isGatewayDisconnectLikeError(error)) {
           console.error("Failed to refresh agents while awaiting delete restart.", error);
@@ -421,11 +425,11 @@ export function useAgentSettingsMutationController(params: UseAgentSettingsMutat
       window.clearInterval(intervalId);
     };
   }, [
-    params.agents,
-    params.loadAgents,
-    params.setMobilePaneChat,
-    params.status,
+    connectedStatus,
+    loadAgents,
     restartingMutationBlock,
+    setMobilePaneChat,
+    settingsAgents,
   ]);
 
   const handleDeleteAgent = useCallback(
@@ -456,16 +460,16 @@ export function useAgentSettingsMutationController(params: UseAgentSettingsMutat
         executeMutation: async () => {
           await deleteAgentViaStudio({
             client: params.client,
+            runtimeWriteTransport: params.runtimeWriteTransport,
             agentId: decision.normalizedAgentId,
             fetchJson,
             logError: (message, error) => console.error(message, error),
-            useDomainIntents,
           });
           params.clearInspectSidebar();
         },
       });
     },
-    [mutationContext, params, runRestartingMutationLifecycle, useDomainIntents]
+    [mutationContext, params, runRestartingMutationLifecycle]
   );
 
   const handleCreateCronJob = useCallback(
@@ -592,23 +596,15 @@ export function useAgentSettingsMutationController(params: UseAgentSettingsMutat
         agentName: name,
         label: `Rename ${agent.name}`,
         executeMutation: async () => {
-          if (useDomainIntents) {
-            await postStudioIntent("/api/intents/agent-rename", {
-              agentId: decision.normalizedAgentId,
-              name,
-            });
-          } else {
-            await renameGatewayAgent({
-              client: params.client,
-              agentId: decision.normalizedAgentId,
-              name,
-            });
-          }
+          await params.runtimeWriteTransport.agentRename({
+            agentId: decision.normalizedAgentId,
+            name,
+          });
           params.dispatchUpdateAgent(decision.normalizedAgentId, { name });
         },
       });
     },
-    [mutationContext, params, runRestartingMutationLifecycle, useDomainIntents]
+    [mutationContext, params, runRestartingMutationLifecycle]
   );
 
   const handleUpdateAgentPermissions = useCallback(
@@ -633,11 +629,11 @@ export function useAgentSettingsMutationController(params: UseAgentSettingsMutat
         run: async () => {
           await updateAgentPermissionsViaStudio({
             client: params.client,
+            runtimeWriteTransport: params.runtimeWriteTransport,
             agentId: decision.normalizedAgentId,
             sessionKey: agent.sessionKey,
             draft,
             loadAgents: async () => {},
-            useDomainIntents,
           });
           await params.loadAgents();
           await params.refreshGatewayConfigSnapshot();

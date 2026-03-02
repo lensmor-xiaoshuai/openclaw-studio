@@ -1,10 +1,15 @@
 import type { Page, Route, Request } from "@playwright/test";
 
-export type StudioSettingsFixture = {
+type StudioSettingsFixture = {
   version: 1;
   gateway: { url: string; token: string } | null;
   focused: Record<string, { mode: "focused"; filter: string; selectedAgentId: string | null }>;
   avatars: Record<string, Record<string, string>>;
+};
+
+type StudioRouteEnvelopeFixture = {
+  localGatewayDefaults?: { url: string; token: string } | null;
+  domainApiModeEnabled?: boolean;
 };
 
 const DEFAULT_SETTINGS: StudioSettingsFixture = {
@@ -14,20 +19,28 @@ const DEFAULT_SETTINGS: StudioSettingsFixture = {
   avatars: {},
 };
 
-const createStudioRoute = (initial: StudioSettingsFixture = DEFAULT_SETTINGS) => {
+const createStudioRoute = (
+  initial: StudioSettingsFixture = DEFAULT_SETTINGS,
+  envelope: StudioRouteEnvelopeFixture = {}
+) => {
   let settings: StudioSettingsFixture = {
     version: 1,
     gateway: initial.gateway ?? null,
     focused: { ...(initial.focused ?? {}) },
     avatars: { ...(initial.avatars ?? {}) },
   };
+  const responseEnvelope = () => ({
+    settings,
+    localGatewayDefaults: envelope.localGatewayDefaults ?? null,
+    domainApiModeEnabled: envelope.domainApiModeEnabled ?? true,
+  });
 
   return async (route: Route, request: Request) => {
     if (request.method() === "GET") {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify({ settings }),
+        body: JSON.stringify(responseEnvelope()),
       });
       return;
     }
@@ -94,14 +107,15 @@ const createStudioRoute = (initial: StudioSettingsFixture = DEFAULT_SETTINGS) =>
     await route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify({ settings }),
+      body: JSON.stringify(responseEnvelope()),
     });
   };
 };
 
 export const stubStudioRoute = async (
   page: Page,
-  initial: StudioSettingsFixture = DEFAULT_SETTINGS
+  initial: StudioSettingsFixture = DEFAULT_SETTINGS,
+  envelope?: StudioRouteEnvelopeFixture
 ) => {
-  await page.route("**/api/studio", createStudioRoute(initial));
+  await page.route("**/api/studio", createStudioRoute(initial, envelope));
 };

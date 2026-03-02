@@ -25,7 +25,7 @@ export type AssistantTraceEvent =
   | { kind: "thinking"; text: string }
   | { kind: "tool"; text: string };
 
-export type AgentChatRenderBlock =
+type AgentChatRenderBlock =
   | { kind: "user"; text: string; timestampMs?: number }
   | {
       kind: "assistant";
@@ -35,7 +35,7 @@ export type AgentChatRenderBlock =
       traceEvents: AssistantTraceEvent[];
     };
 
-export type BuildAgentChatItemsInput = {
+type BuildAgentChatItemsInput = {
   outputLines: string[];
   streamText: string | null;
   liveThinkingTrace: string;

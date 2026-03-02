@@ -40,7 +40,7 @@ export const resolveSandboxRepairAgentIds = (
     .map((entry) => entry.id);
 };
 
-export type SandboxRepairIntent =
+type SandboxRepairIntent =
   | { kind: "skip"; reason: "not-connected" | "already-attempted" | "no-eligible-agents" }
   | { kind: "repair"; agentIds: string[] };
 
@@ -75,7 +75,7 @@ export const shouldRefreshGatewayConfigForSettingsRoute = (params: {
   return true;
 };
 
-export type GatewayModelsSyncIntent = { kind: "clear" } | { kind: "load" };
+type GatewayModelsSyncIntent = { kind: "clear" } | { kind: "load" };
 
 export const resolveGatewayModelsSyncIntent = (params: {
   status: GatewayConnectionStatus;

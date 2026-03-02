@@ -22,7 +22,7 @@ All setups use the same install/run path (recommended): `npx -y openclaw-studio@
 
 ## Requirements
 
-- Node.js 18+ (LTS recommended)
+- Node.js 20.9+ (LTS recommended)
 - An OpenClaw Gateway URL + token
 - Tailscale (optional, recommended for remote access)
 
@@ -78,10 +78,12 @@ Notes:
 
 ## How It Connects (Mental Model)
 
-There are **two separate network paths**:
+In domain API mode (default), there are **two primary paths**:
 
-1. Browser -> Studio: HTTP for the UI, plus a WebSocket to `ws(s)://<studio-host>:3000/api/gateway/ws`
-2. Studio -> Gateway (upstream): a second WebSocket opened by the Studio Node server to your configured Upstream URL
+1. Browser -> Studio: HTTP + SSE (`/api/runtime/*`, `/api/intents/*`, `/api/runtime/stream`)
+2. Studio -> Gateway (upstream): one server-owned WebSocket opened by the Studio Node process
+
+The legacy browser WebSocket bridge (`/api/gateway/ws`) is still available for compatibility/diagnostics when domain mode is disabled.
 
 This is why `ws://localhost:18789` means “gateway on the Studio host”, not “gateway on your phone”.
 
@@ -99,8 +101,18 @@ npm run dev
 Paths and key settings:
 - OpenClaw config: `~/.openclaw/openclaw.json` (or via `OPENCLAW_STATE_DIR`)
 - Studio settings: `~/.openclaw/openclaw-studio/settings.json`
+- Control-plane runtime DB: `~/.openclaw/openclaw-studio/runtime.db`
 - Default gateway URL: `ws://localhost:18789` (override via Studio Settings or `NEXT_PUBLIC_GATEWAY_URL`)
+- Domain API mode toggle: `STUDIO_DOMAIN_API_MODE` (server) or `NEXT_PUBLIC_STUDIO_DOMAIN_API_MODE` fallback. The UI reads the effective value from `/api/studio` (`domainApiModeEnabled`) and uses that server-reported value for runtime routing.
 - `STUDIO_ACCESS_TOKEN`: required when binding Studio to a public host (`HOST=0.0.0.0`, `HOST=::`, or non-loopback hostnames/IPs); optional for loopback-only binds (`127.0.0.1`, `::1`, `localhost`)
+
+Startup guard behavior:
+- `npm run dev` and `npm run dev:turbo` run `verify:native-runtime:repair` before server startup.
+- `npm run start` runs `verify:native-runtime:check` before startup (check-only; no dependency mutation).
+
+Why SQLite exists now:
+- Studio’s server-owned control plane stores durable runtime projection + replay outbox in `runtime.db`.
+- This keeps runtime history and SSE replay deterministic across page refreshes and process restarts.
 
 ## UI guide
 
@@ -126,6 +138,12 @@ If the UI loads but “Connect” fails, it’s usually Studio->Gateway:
 - Assets 404 under `/studio`: serve Studio at `/` or configure `basePath` and rebuild.
 - 401 “Studio access token required”: `STUDIO_ACCESS_TOKEN` is enabled; open `/?access_token=...` once to set the cookie.
 - Helpful error codes: `studio.gateway_url_missing`, `studio.gateway_token_missing`, `studio.upstream_error`, `studio.upstream_closed`.
+
+If startup fails with `better_sqlite3.node` / `NODE_MODULE_VERSION` mismatch:
+- Run `npm run verify:native-runtime:repair`
+- If it still fails, run:
+  - `npm rebuild better-sqlite3`
+  - `npm install`
 
 ## Architecture
 

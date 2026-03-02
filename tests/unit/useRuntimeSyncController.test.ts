@@ -71,6 +71,7 @@ type RenderControllerContext = {
   unmount: () => void;
   dispatch: ReturnType<typeof vi.fn>;
   clearRunTracking: ReturnType<typeof vi.fn>;
+  ingestDomainOutboxEntries: ReturnType<typeof vi.fn>;
   call: ReturnType<typeof vi.fn>;
   onGap: ReturnType<typeof vi.fn>;
   getGapHandler: () => ((info: GatewayGapInfo) => void) | null;
@@ -82,6 +83,7 @@ const renderController = (
 ): RenderControllerContext => {
   const dispatch = vi.fn();
   const clearRunTracking = vi.fn();
+  const ingestDomainOutboxEntries = vi.fn();
   const call = vi.fn(async (method: string) => {
     if (method === "status") {
       return { sessions: { recent: [], byAgent: [] } };
@@ -98,7 +100,10 @@ const renderController = (
     return unsubscribeGap;
   });
 
-  let currentParams: Parameters<typeof useRuntimeSyncController>[0] = {
+  const currentParamsBase: Omit<
+    Parameters<typeof useRuntimeSyncController>[0],
+    "useDomainApiReads" | "ingestDomainOutboxEntries"
+  > = {
     client: {
       call,
       onGap,
@@ -113,6 +118,11 @@ const renderController = (
     defaultHistoryLimit: 200,
     maxHistoryLimit: 5000,
     ...(overrides ?? {}),
+  };
+  let currentParams: Parameters<typeof useRuntimeSyncController>[0] = {
+    ...currentParamsBase,
+    useDomainApiReads: overrides?.useDomainApiReads ?? false,
+    ingestDomainOutboxEntries: overrides?.ingestDomainOutboxEntries ?? ingestDomainOutboxEntries,
   };
 
   const valueRef: { current: RuntimeSyncControllerValue | null } = { current: null };
@@ -151,6 +161,9 @@ const renderController = (
       currentParams = {
         ...currentParams,
         ...nextOverrides,
+        useDomainApiReads: nextOverrides.useDomainApiReads ?? currentParams.useDomainApiReads,
+        ingestDomainOutboxEntries:
+          nextOverrides.ingestDomainOutboxEntries ?? currentParams.ingestDomainOutboxEntries,
       };
       rendered.rerender(
         createElement(Probe, {
@@ -166,6 +179,7 @@ const renderController = (
     },
     dispatch,
     clearRunTracking,
+    ingestDomainOutboxEntries,
     call,
     onGap,
     getGapHandler: () => gapHandler,
@@ -181,7 +195,6 @@ describe("useRuntimeSyncController", () => {
 
   beforeEach(() => {
     vi.useFakeTimers();
-    process.env.NEXT_PUBLIC_STUDIO_DOMAIN_API_MODE = "false";
     mockedRunHistorySyncOperation.mockReset();
     mockedRunHistorySyncOperation.mockResolvedValue([]);
     mockedExecuteHistorySyncCommands.mockReset();
@@ -193,7 +206,6 @@ describe("useRuntimeSyncController", () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.restoreAllMocks();
-    delete process.env.NEXT_PUBLIC_STUDIO_DOMAIN_API_MODE;
   });
 
   it("runs reconcile immediately and every 3000ms while connected then cleans up", async () => {
@@ -368,8 +380,8 @@ describe("useRuntimeSyncController", () => {
     expect(inFlightSeen).toEqual([false, true, false]);
   });
 
-  it("uses domain runtime APIs when NEXT_PUBLIC_STUDIO_DOMAIN_API_MODE is enabled", async () => {
-    process.env.NEXT_PUBLIC_STUDIO_DOMAIN_API_MODE = "true";
+  it("uses domain runtime APIs, ingests history entries, and paginates with beforeOutboxId", async () => {
+    let historyCallCount = 0;
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.includes("/api/runtime/summary")) {
@@ -382,11 +394,74 @@ describe("useRuntimeSyncController", () => {
           { status: 200, headers: { "Content-Type": "application/json" } }
         );
       }
-      if (url.includes("/api/runtime/agents/")) {
-        return new Response(JSON.stringify({ enabled: true, entries: [] }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        });
+      if (url.includes("/api/runtime/agents/agent-1/history")) {
+        historyCallCount += 1;
+        if (historyCallCount === 1 || historyCallCount === 2) {
+          return new Response(
+            JSON.stringify({
+              enabled: true,
+              entries: [
+                {
+                  id: 5,
+                  event: {
+                    type: "gateway.event",
+                    event: "runtime.delta",
+                    seq: 5,
+                    payload: { sessionKey: "agent:agent-1:main", delta: "a" },
+                    asOf: "2026-03-01T00:00:05.000Z",
+                  },
+                  createdAt: "2026-03-01T00:00:05.000Z",
+                },
+                {
+                  id: 6,
+                  event: {
+                    type: "gateway.event",
+                    event: "runtime.delta",
+                    seq: 6,
+                    payload: { sessionKey: "agent:agent-1:main", delta: "b" },
+                    asOf: "2026-03-01T00:00:06.000Z",
+                  },
+                  createdAt: "2026-03-01T00:00:06.000Z",
+                },
+              ],
+              hasMore: true,
+              nextBeforeOutboxId: 5,
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          );
+        }
+        return new Response(
+          JSON.stringify({
+            enabled: true,
+            entries: [
+              {
+                id: 3,
+                event: {
+                  type: "gateway.event",
+                  event: "runtime.delta",
+                  seq: 3,
+                  payload: { sessionKey: "agent:agent-1:main", delta: "older-a" },
+                  asOf: "2026-03-01T00:00:03.000Z",
+                },
+                createdAt: "2026-03-01T00:00:03.000Z",
+              },
+              {
+                id: 4,
+                event: {
+                  type: "gateway.event",
+                  event: "runtime.delta",
+                  seq: 4,
+                  payload: { sessionKey: "agent:agent-1:main", delta: "older-b" },
+                  asOf: "2026-03-01T00:00:04.000Z",
+                },
+                createdAt: "2026-03-01T00:00:04.000Z",
+              },
+            ],
+            hasMore: false,
+            nextBeforeOutboxId: null,
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
       }
       return new Response(JSON.stringify({}), {
         status: 200,
@@ -395,21 +470,144 @@ describe("useRuntimeSyncController", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
+    const ingestDomainOutboxEntries = vi.fn();
     const ctx = renderController({
-      focusedAgentId: "agent-1",
-      focusedAgentRunning: true,
+      status: "disconnected",
+      useDomainApiReads: true,
+      agents: [createAgent({ historyFetchLimit: 2 })],
+      ingestDomainOutboxEntries,
+      focusedAgentId: null,
+      focusedAgentRunning: false,
     });
 
     await act(async () => {
-      await Promise.resolve();
+      await ctx.getValue().loadAgentHistory("agent-1", { limit: 2 });
+    });
+    expect(ingestDomainOutboxEntries).toHaveBeenCalledTimes(1);
+    expect(ingestDomainOutboxEntries).toHaveBeenNthCalledWith(
+      1,
+      expect.arrayContaining([expect.objectContaining({ id: 5 }), expect.objectContaining({ id: 6 })])
+    );
+    expect(ctx.dispatch).toHaveBeenCalledWith({
+      type: "updateAgent",
+      agentId: "agent-1",
+      patch: expect.objectContaining({
+        historyFetchLimit: 2,
+        historyFetchedCount: 2,
+        historyMaybeTruncated: true,
+      }),
     });
 
-    expect(fetchMock).toHaveBeenCalledWith("/api/runtime/summary", expect.anything());
+    await act(async () => {
+      await ctx.getValue().loadAgentHistory("agent-1", { limit: 2 });
+    });
+    expect(ingestDomainOutboxEntries).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      ctx.getValue().loadMoreAgentHistory("agent-1");
+      await Promise.resolve();
+      await Promise.resolve();
+    });
     expect(fetchMock).toHaveBeenCalledWith(
-      expect.stringContaining("/api/runtime/agents/agent-1/history"),
+      expect.stringContaining("/api/runtime/agents/agent-1/history?limit=2&beforeOutboxId=5"),
       expect.anything()
     );
+    expect(ingestDomainOutboxEntries).toHaveBeenCalledTimes(2);
+    expect(ingestDomainOutboxEntries).toHaveBeenNthCalledWith(
+      2,
+      expect.arrayContaining([expect.objectContaining({ id: 3 }), expect.objectContaining({ id: 4 })])
+    );
+
     expect(ctx.call).not.toHaveBeenCalledWith("status", {});
+    vi.unstubAllGlobals();
+    ctx.unmount();
+  });
+
+  it("does not drop valid history when outbox ids repeat with new createdAt values", async () => {
+    let historyCallCount = 0;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/api/runtime/agents/agent-1/history")) {
+        historyCallCount += 1;
+        if (historyCallCount === 1) {
+          return new Response(
+            JSON.stringify({
+              enabled: true,
+              entries: [
+                {
+                  id: 5,
+                  event: {
+                    type: "gateway.event",
+                    event: "runtime.delta",
+                    seq: 5,
+                    payload: { sessionKey: "agent:agent-1:main", delta: "old" },
+                    asOf: "2026-03-01T00:00:05.000Z",
+                  },
+                  createdAt: "2026-03-01T00:00:05.000Z",
+                },
+              ],
+              hasMore: false,
+              nextBeforeOutboxId: null,
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          );
+        }
+        return new Response(
+          JSON.stringify({
+            enabled: true,
+            entries: [
+              {
+                id: 5,
+                event: {
+                  type: "gateway.event",
+                  event: "runtime.delta",
+                  seq: 5,
+                  payload: { sessionKey: "agent:agent-1:main", delta: "new" },
+                  asOf: "2026-03-02T00:00:05.000Z",
+                },
+                createdAt: "2026-03-02T00:00:05.000Z",
+              },
+            ],
+            hasMore: false,
+            nextBeforeOutboxId: null,
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+      return new Response(JSON.stringify({ enabled: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const ingestDomainOutboxEntries = vi.fn();
+    const ctx = renderController({
+      status: "disconnected",
+      useDomainApiReads: true,
+      agents: [createAgent({ historyFetchLimit: 2 })],
+      ingestDomainOutboxEntries,
+      focusedAgentId: null,
+      focusedAgentRunning: false,
+    });
+
+    await act(async () => {
+      await ctx.getValue().loadAgentHistory("agent-1", { limit: 2 });
+    });
+    await act(async () => {
+      await ctx.getValue().loadAgentHistory("agent-1", { limit: 2 });
+    });
+
+    expect(ingestDomainOutboxEntries).toHaveBeenCalledTimes(2);
+    expect(ingestDomainOutboxEntries).toHaveBeenNthCalledWith(
+      1,
+      expect.arrayContaining([expect.objectContaining({ id: 5, createdAt: "2026-03-01T00:00:05.000Z" })])
+    );
+    expect(ingestDomainOutboxEntries).toHaveBeenNthCalledWith(
+      2,
+      expect.arrayContaining([expect.objectContaining({ id: 5, createdAt: "2026-03-02T00:00:05.000Z" })])
+    );
+
     vi.unstubAllGlobals();
     ctx.unmount();
   });

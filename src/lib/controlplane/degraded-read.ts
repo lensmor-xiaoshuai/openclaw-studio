@@ -10,13 +10,13 @@ type RuntimeProbeCommandResult =
   | { ok: true; value: unknown }
   | { ok: false; error: string };
 
-export type RuntimeProbeSnapshot = {
+type RuntimeProbeSnapshot = {
   at: string;
   status: RuntimeProbeCommandResult;
   sessions: RuntimeProbeCommandResult;
 };
 
-export type RuntimeFreshness = {
+type RuntimeFreshness = {
   source: "gateway" | "projection" | "probe";
   stale: boolean;
   asOf: string | null;

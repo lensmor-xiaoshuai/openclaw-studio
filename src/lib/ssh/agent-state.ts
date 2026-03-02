@@ -1,13 +1,13 @@
 import { runSshJson } from "@/lib/ssh/gateway-host";
 
-export type GatewayAgentStateMove = { from: string; to: string };
+type GatewayAgentStateMove = { from: string; to: string };
 
-export type TrashAgentStateResult = {
+type TrashAgentStateResult = {
   trashDir: string;
   moved: GatewayAgentStateMove[];
 };
 
-export type RestoreAgentStateResult = {
+type RestoreAgentStateResult = {
   restored: GatewayAgentStateMove[];
 };
 

@@ -65,7 +65,7 @@ export type RuntimeAgentWorkflowInput = {
   lifecycleFallbackDelayMs: number;
 };
 
-export type RuntimeAgentWorkflowResult = {
+type RuntimeAgentWorkflowResult = {
   commands: RuntimeAgentWorkflowCommand[];
 };
 

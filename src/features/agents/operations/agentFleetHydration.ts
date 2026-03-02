@@ -53,7 +53,7 @@ type ExecApprovalsSnapshot = {
   };
 };
 
-export type HydrateAgentFleetResult = {
+type HydrateAgentFleetResult = {
   seeds: AgentStoreSeed[];
   sessionCreatedAgentIds: string[];
   sessionSettingsSyncedAgentIds: string[];

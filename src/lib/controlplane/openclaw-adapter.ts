@@ -16,8 +16,8 @@ const REQUEST_TIMEOUT_MS = 15_000;
 const INITIAL_RECONNECT_DELAY_MS = 1_000;
 const MAX_RECONNECT_DELAY_MS = 15_000;
 const CONNECT_PROTOCOL = 3;
-const CONNECT_CLIENT_ID = "gateway-client";
-const CONNECT_CLIENT_MODE = "backend";
+const CONNECT_CLIENT_ID = "openclaw-control-ui";
+const CONNECT_CLIENT_MODE = "webchat";
 
 const DEFAULT_METHOD_ALLOWLIST = new Set<string>([
   "status",
@@ -319,11 +319,17 @@ export class OpenClawGatewayAdapter {
             client: {
               id: CONNECT_CLIENT_ID,
               version: "dev",
-              platform: "node",
+              platform: "web",
               mode: CONNECT_CLIENT_MODE,
             },
             role: "operator",
-            scopes: ["operator.admin", "operator.approvals", "operator.pairing"],
+            scopes: [
+              "operator.admin",
+              "operator.read",
+              "operator.write",
+              "operator.approvals",
+              "operator.pairing",
+            ],
             caps: [],
             auth: { token },
           },

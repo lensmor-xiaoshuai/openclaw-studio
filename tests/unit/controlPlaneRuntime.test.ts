@@ -142,6 +142,7 @@ describe("control-plane runtime", () => {
   });
 
   it("parses STUDIO_DOMAIN_API_MODE values", () => {
+    delete process.env.NEXT_PUBLIC_STUDIO_DOMAIN_API_MODE;
     process.env.STUDIO_DOMAIN_API_MODE = "true";
     expect(isStudioDomainApiModeEnabled()).toBe(true);
     process.env.STUDIO_DOMAIN_API_MODE = "1";

@@ -1,6 +1,6 @@
 import type { AgentState } from "@/features/agents/state/store";
 
-export type HistoryRequestIntent =
+type HistoryRequestIntent =
   | {
       kind: "skip";
       reason: "missing-agent" | "session-not-created" | "missing-session-key" | "in-flight";
@@ -15,7 +15,7 @@ export type HistoryRequestIntent =
       loadedAt: number;
     };
 
-export type HistoryResponseDisposition =
+type HistoryResponseDisposition =
   | {
       kind: "drop";
       reason:

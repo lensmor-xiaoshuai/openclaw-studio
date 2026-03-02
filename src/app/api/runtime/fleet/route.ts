@@ -3,7 +3,9 @@ import { NextResponse } from "next/server";
 import { hydrateAgentFleetFromGateway } from "@/features/agents/operations/agentFleetHydration";
 import type { GatewayModelPolicySnapshot } from "@/lib/gateway/models";
 import { deriveRuntimeFreshness, probeOpenClawLocalState } from "@/lib/controlplane/degraded-read";
-import type { ControlPlaneOutboxEntry } from "@/lib/controlplane/contracts";
+import type { ControlPlaneOutboxEntry, ControlPlaneRuntimeSnapshot } from "@/lib/controlplane/contracts";
+import { serializeRuntimeInitFailure } from "@/lib/controlplane/runtime-init-errors";
+import { ControlPlaneGatewayError } from "@/lib/controlplane/openclaw-adapter";
 import { bootstrapDomainRuntime } from "@/lib/controlplane/runtime-route-bootstrap";
 import { loadStudioSettings } from "@/lib/studio/settings-store";
 
@@ -97,6 +99,54 @@ const deriveDegradedFleetResult = (
   };
 };
 
+const resolveGatewayErrorCode = (error: unknown): string => {
+  if (error instanceof ControlPlaneGatewayError) {
+    return error.code.trim().toUpperCase();
+  }
+  if (isRecord(error) && typeof error.code === "string") {
+    return error.code.trim().toUpperCase();
+  }
+  return "";
+};
+
+const resolveErrorMessage = (error: unknown): string =>
+  error instanceof Error ? error.message : String(error);
+
+const isMissingScopeGatewayError = (error: unknown): boolean => {
+  const code = resolveGatewayErrorCode(error);
+  if (code !== "INVALID_REQUEST") return false;
+  return resolveErrorMessage(error).toLowerCase().includes("missing scope");
+};
+
+const isGatewayUnavailableError = (error: unknown): boolean =>
+  resolveGatewayErrorCode(error) === "GATEWAY_UNAVAILABLE";
+
+const buildDegradedFleetResponse = async (params: {
+  controlPlane: {
+    snapshot: () => ControlPlaneRuntimeSnapshot;
+    eventsAfter: (lastSeenId: number, limit?: number) => ControlPlaneOutboxEntry[];
+  };
+  cachedConfigSnapshot: GatewayModelPolicySnapshot | null;
+  error: string;
+  code: string;
+  reason: string;
+}) => {
+  const snapshot = params.controlPlane.snapshot();
+  const floorOutboxId = Math.max(0, snapshot.outboxHead - DEGRADED_FLEET_OUTBOX_SCAN_LIMIT);
+  const entries = params.controlPlane.eventsAfter(floorOutboxId, DEGRADED_FLEET_OUTBOX_SCAN_LIMIT);
+  const probe = await probeOpenClawLocalState();
+  return NextResponse.json({
+    enabled: true,
+    degraded: true,
+    error: params.error,
+    code: params.code,
+    reason: params.reason,
+    freshness: deriveRuntimeFreshness(snapshot, probe),
+    probe,
+    result: deriveDegradedFleetResult(entries, params.cachedConfigSnapshot),
+  });
+};
+
 export async function POST(request: Request) {
   const bootstrap = await bootstrapDomainRuntime();
   if (bootstrap.kind === "mode-disabled") {
@@ -118,9 +168,7 @@ export async function POST(request: Request) {
     return NextResponse.json(
       {
         enabled: true,
-        error: bootstrap.message,
-        code: "CONTROLPLANE_RUNTIME_INIT_FAILED",
-        reason: "runtime_init_failed",
+        ...serializeRuntimeInitFailure(bootstrap.failure),
       },
       { status: 503 }
     );
@@ -128,20 +176,12 @@ export async function POST(request: Request) {
   const controlPlane = bootstrap.runtime;
 
   if (bootstrap.kind === "start-failed") {
-    const snapshot = controlPlane.snapshot();
-    const floorOutboxId = Math.max(0, snapshot.outboxHead - DEGRADED_FLEET_OUTBOX_SCAN_LIMIT);
-    const entries = controlPlane.eventsAfter(floorOutboxId, DEGRADED_FLEET_OUTBOX_SCAN_LIMIT);
-    const probe = await probeOpenClawLocalState();
-
-    return NextResponse.json({
-      enabled: true,
-      degraded: true,
+    return await buildDegradedFleetResponse({
+      controlPlane,
+      cachedConfigSnapshot,
       error: bootstrap.message,
       code: "GATEWAY_UNAVAILABLE",
       reason: "gateway_unavailable",
-      freshness: deriveRuntimeFreshness(snapshot, probe),
-      probe,
-      result: deriveDegradedFleetResult(entries, cachedConfigSnapshot),
     });
   }
 
@@ -163,6 +203,24 @@ export async function POST(request: Request) {
     });
     return NextResponse.json({ enabled: true, result });
   } catch (err) {
+    if (isMissingScopeGatewayError(err)) {
+      return await buildDegradedFleetResponse({
+        controlPlane,
+        cachedConfigSnapshot,
+        error: resolveErrorMessage(err),
+        code: "INSUFFICIENT_SCOPE",
+        reason: "insufficient_scope",
+      });
+    }
+    if (isGatewayUnavailableError(err)) {
+      return await buildDegradedFleetResponse({
+        controlPlane,
+        cachedConfigSnapshot,
+        error: resolveErrorMessage(err),
+        code: "GATEWAY_UNAVAILABLE",
+        reason: "gateway_unavailable",
+      });
+    }
     const message = err instanceof Error ? err.message : "fleet_load_failed";
     return NextResponse.json({ enabled: true, error: message }, { status: 500 });
   }

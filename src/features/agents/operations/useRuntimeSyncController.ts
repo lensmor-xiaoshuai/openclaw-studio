@@ -26,9 +26,9 @@ import {
 } from "@/features/agents/state/runtimeEventBridge";
 import type { AgentState } from "@/features/agents/state/store";
 import { TRANSCRIPT_V2_ENABLED, logTranscriptDebugMetric } from "@/features/agents/state/transcript";
+import type { ControlPlaneOutboxEntry } from "@/lib/controlplane/contracts";
 import { randomUUID } from "@/lib/uuid";
 import { fetchJson } from "@/lib/http";
-import { isStudioDomainIntentModeEnabled } from "@/lib/controlplane/domain-mode";
 
 type RuntimeSyncDispatchAction = {
   type: "updateAgent";
@@ -41,7 +41,7 @@ type GatewayClientLike = {
   onGap?: (handler: (info: { expected: number; received: number }) => void) => () => void;
 };
 
-export type UseRuntimeSyncControllerParams = {
+type UseRuntimeSyncControllerParams = {
   client: GatewayClientLike;
   status: "disconnected" | "connecting" | "connected";
   agents: AgentState[];
@@ -50,32 +50,66 @@ export type UseRuntimeSyncControllerParams = {
   dispatch: (action: RuntimeSyncDispatchAction) => void;
   clearRunTracking: (runId: string) => void;
   isDisconnectLikeError: (error: unknown) => boolean;
+  useDomainApiReads: boolean;
+  ingestDomainOutboxEntries: (entries: ControlPlaneOutboxEntry[]) => void;
   defaultHistoryLimit?: number;
   maxHistoryLimit?: number;
 };
 
-export type RuntimeSyncController = {
+type RuntimeSyncController = {
   loadSummarySnapshot: () => Promise<void>;
-  loadAgentHistory: (agentId: string, options?: { limit?: number }) => Promise<void>;
+  loadAgentHistory: (
+    agentId: string,
+    options?: { limit?: number; beforeOutboxId?: number }
+  ) => Promise<void>;
   loadMoreAgentHistory: (agentId: string) => void;
   reconcileRunningAgents: () => Promise<void>;
   clearHistoryInFlight: (sessionKey: string) => void;
 };
 
+type DomainAgentHistoryResponse = {
+  entries?: unknown[];
+  hasMore?: unknown;
+  nextBeforeOutboxId?: unknown;
+};
+
+const MAX_DOMAIN_HISTORY_DEDUPE_KEYS = 20_000;
+
+const resolveDomainOutboxDedupeKey = (entry: ControlPlaneOutboxEntry): string | null => {
+  const entryId = typeof entry?.id === "number" && Number.isFinite(entry.id) ? entry.id : null;
+  if (entryId === null) return null;
+  const createdAt = typeof entry.createdAt === "string" ? entry.createdAt.trim() : "";
+  return `${entryId}:${createdAt}`;
+};
+
 export function useRuntimeSyncController(
   params: UseRuntimeSyncControllerParams
 ): RuntimeSyncController {
-  const useDomainApiReads = isStudioDomainIntentModeEnabled();
-  const agentsRef = useRef(params.agents);
+  const {
+    client,
+    status,
+    agents,
+    focusedAgentId,
+    focusedAgentRunning,
+    dispatch,
+    clearRunTracking,
+    isDisconnectLikeError,
+    useDomainApiReads,
+    ingestDomainOutboxEntries,
+  } = params;
+  const agentsRef = useRef(agents);
   const historyInFlightRef = useRef<Set<string>>(new Set());
   const reconcileRunInFlightRef = useRef<Set<string>>(new Set());
+  const domainHistoryCursorByAgentRef = useRef<Map<string, number | null>>(new Map());
+  const seenDomainOutboxKeysRef = useRef<Set<string>>(new Set());
+  const seenDomainOutboxKeyOrderRef = useRef<string[]>([]);
 
   const defaultHistoryLimit = params.defaultHistoryLimit ?? RUNTIME_SYNC_DEFAULT_HISTORY_LIMIT;
   const maxHistoryLimit = params.maxHistoryLimit ?? RUNTIME_SYNC_MAX_HISTORY_LIMIT;
 
   useEffect(() => {
-    agentsRef.current = params.agents;
-  }, [params.agents]);
+    agentsRef.current = agents;
+  }, [agents]);
 
   const clearHistoryInFlight = useCallback((sessionKey: string) => {
     const key = sessionKey.trim();
@@ -90,7 +124,7 @@ export function useRuntimeSyncController(
           cache: "no-store",
         });
       } catch (error) {
-        if (!params.isDisconnectLikeError(error)) {
+        if (!isDisconnectLikeError(error)) {
           console.error("Failed to load domain runtime summary.", error);
         }
       }
@@ -105,11 +139,11 @@ export function useRuntimeSyncController(
     const activeAgents = snapshotAgents.filter((agent) => agent.sessionCreated);
     try {
       const [statusSummary, previewResult] = await Promise.all([
-        params.client.call<SummaryStatusSnapshot>("status", {}),
-        params.client.call<SummaryPreviewSnapshot>("sessions.preview", {
+        client.call<SummaryStatusSnapshot>("status", {}),
+        client.call<SummaryPreviewSnapshot>("sessions.preview", {
           keys: summaryIntent.keys,
           limit: summaryIntent.limit,
-          maxChars: summaryIntent.maxChars,
+      maxChars: summaryIntent.maxChars,
         }),
       ]);
       for (const entry of buildSummarySnapshotPatches({
@@ -117,61 +151,104 @@ export function useRuntimeSyncController(
         statusSummary,
         previewResult,
       })) {
-        params.dispatch({
+        dispatch({
           type: "updateAgent",
           agentId: entry.agentId,
           patch: entry.patch,
         });
       }
     } catch (error) {
-      if (!params.isDisconnectLikeError(error)) {
+      if (!isDisconnectLikeError(error)) {
         console.error("Failed to load summary snapshot.", error);
       }
     }
-  }, [params.client, params.dispatch, params.isDisconnectLikeError, useDomainApiReads]);
+  }, [client, dispatch, isDisconnectLikeError, useDomainApiReads]);
 
   const loadAgentHistoryViaDomainApi = useCallback(
-    async (agentId: string, limit: number) => {
+    async (agentId: string, limit: number, beforeOutboxId?: number) => {
       const encodedAgentId = encodeURIComponent(agentId.trim());
       if (!encodedAgentId) return;
-      const result = await fetchJson<{ entries?: unknown[] }>(
-        `/api/runtime/agents/${encodedAgentId}/history?limit=${limit}`,
+      const query = new URLSearchParams();
+      query.set("limit", String(limit));
+      if (
+        typeof beforeOutboxId === "number" &&
+        Number.isFinite(beforeOutboxId) &&
+        beforeOutboxId > 0
+      ) {
+        query.set("beforeOutboxId", String(Math.floor(beforeOutboxId)));
+      }
+      const result = await fetchJson<DomainAgentHistoryResponse>(
+        `/api/runtime/agents/${encodedAgentId}/history?${query.toString()}`,
         { cache: "no-store" }
       );
-      const entries = Array.isArray(result.entries) ? result.entries : [];
-      params.dispatch({
+      const entries = Array.isArray(result.entries) ? (result.entries as ControlPlaneOutboxEntry[]) : [];
+      const unseen: ControlPlaneOutboxEntry[] = [];
+      for (const entry of entries) {
+        const dedupeKey = resolveDomainOutboxDedupeKey(entry);
+        if (!dedupeKey) continue;
+        if (seenDomainOutboxKeysRef.current.has(dedupeKey)) continue;
+        seenDomainOutboxKeysRef.current.add(dedupeKey);
+        seenDomainOutboxKeyOrderRef.current.push(dedupeKey);
+        unseen.push(entry);
+      }
+      if (seenDomainOutboxKeyOrderRef.current.length > MAX_DOMAIN_HISTORY_DEDUPE_KEYS) {
+        const overflow = seenDomainOutboxKeyOrderRef.current.length - MAX_DOMAIN_HISTORY_DEDUPE_KEYS;
+        const dropped = seenDomainOutboxKeyOrderRef.current.splice(0, overflow);
+        for (const key of dropped) {
+          seenDomainOutboxKeysRef.current.delete(key);
+        }
+      }
+      if (unseen.length > 0) {
+        ingestDomainOutboxEntries(unseen);
+      }
+      const hasMore = result.hasMore === true;
+      const nextBeforeOutboxId =
+        typeof result.nextBeforeOutboxId === "number" &&
+        Number.isFinite(result.nextBeforeOutboxId) &&
+        result.nextBeforeOutboxId > 0
+          ? Math.floor(result.nextBeforeOutboxId)
+          : null;
+      const normalizedAgentId = agentId.trim();
+      if (normalizedAgentId) {
+        domainHistoryCursorByAgentRef.current.set(normalizedAgentId, nextBeforeOutboxId);
+      }
+      dispatch({
         type: "updateAgent",
         agentId,
         patch: {
           historyLoadedAt: Date.now(),
           historyFetchLimit: limit,
           historyFetchedCount: entries.length,
-          historyMaybeTruncated: false,
+          historyMaybeTruncated: hasMore,
         },
       });
     },
-    [params.dispatch]
+    [dispatch, ingestDomainOutboxEntries]
   );
 
   const loadAgentHistory = useCallback(
-    async (agentId: string, options?: { limit?: number }) => {
+    async (agentId: string, options?: { limit?: number; beforeOutboxId?: number }) => {
       if (useDomainApiReads) {
         const agent = agentsRef.current.find((entry) => entry.agentId === agentId) ?? null;
         const limit =
           typeof options?.limit === "number" && Number.isFinite(options.limit)
             ? Math.max(1, Math.floor(options.limit))
             : agent?.historyFetchLimit ?? defaultHistoryLimit;
+        const beforeOutboxId =
+          typeof options?.beforeOutboxId === "number" && Number.isFinite(options.beforeOutboxId)
+            ? Math.max(1, Math.floor(options.beforeOutboxId))
+            : undefined;
         try {
-          await loadAgentHistoryViaDomainApi(agentId, limit);
+          await loadAgentHistoryViaDomainApi(agentId, limit, beforeOutboxId);
         } catch (error) {
-          if (!params.isDisconnectLikeError(error)) {
+          if (!isDisconnectLikeError(error)) {
             console.error("Failed to load domain runtime history.", error);
           }
         }
         return;
       }
       const commands = await runHistorySyncOperation({
-        client: params.client,
+        client,
         agentId,
         requestedLimit: options?.limit,
         getAgent: (targetAgentId) =>
@@ -185,25 +262,33 @@ export function useRuntimeSyncController(
       });
       executeHistorySyncCommands({
         commands,
-        dispatch: params.dispatch,
+        dispatch,
         logMetric: (metric, meta) => logTranscriptDebugMetric(metric, meta),
-        isDisconnectLikeError: params.isDisconnectLikeError,
+        isDisconnectLikeError,
         logError: (message, error) => console.error(message, error),
       });
     },
     [
+      client,
       defaultHistoryLimit,
+      dispatch,
+      isDisconnectLikeError,
       loadAgentHistoryViaDomainApi,
       maxHistoryLimit,
-      params.client,
-      params.dispatch,
-      params.isDisconnectLikeError,
       useDomainApiReads,
     ]
   );
 
   const loadMoreAgentHistory = useCallback(
     (agentId: string) => {
+      if (useDomainApiReads) {
+        const agent = agentsRef.current.find((entry) => entry.agentId === agentId) ?? null;
+        const limit = agent?.historyFetchLimit ?? defaultHistoryLimit;
+        const beforeOutboxId = domainHistoryCursorByAgentRef.current.get(agentId) ?? null;
+        if (beforeOutboxId === null) return;
+        void loadAgentHistory(agentId, { limit, beforeOutboxId });
+        return;
+      }
       const agent = agentsRef.current.find((entry) => entry.agentId === agentId) ?? null;
       const nextLimit = resolveRuntimeSyncLoadMoreHistoryLimit({
         currentLimit: agent?.historyFetchLimit ?? null,
@@ -212,14 +297,14 @@ export function useRuntimeSyncController(
       });
       void loadAgentHistory(agentId, { limit: nextLimit });
     },
-    [defaultHistoryLimit, loadAgentHistory, maxHistoryLimit]
+    [defaultHistoryLimit, loadAgentHistory, maxHistoryLimit, useDomainApiReads]
   );
 
   const reconcileRunningAgents = useCallback(async () => {
-    if (params.status !== "connected") return;
+    if (status !== "connected") return;
     if (useDomainApiReads) return;
     const commands = await runAgentReconcileOperation({
-      client: params.client,
+      client,
       agents: agentsRef.current,
       getLatestAgent: (agentId) =>
         agentsRef.current.find((entry) => entry.agentId === agentId) ?? null,
@@ -235,12 +320,12 @@ export function useRuntimeSyncController(
         if (!normalized) return;
         reconcileRunInFlightRef.current.delete(normalized);
       },
-      isDisconnectLikeError: params.isDisconnectLikeError,
+      isDisconnectLikeError,
     });
     executeAgentReconcileCommands({
       commands,
-      dispatch: params.dispatch,
-      clearRunTracking: params.clearRunTracking,
+      dispatch,
+      clearRunTracking,
       requestHistoryRefresh: (agentId) => {
         void loadAgentHistory(agentId);
       },
@@ -248,23 +333,23 @@ export function useRuntimeSyncController(
       logWarn: (message, error) => console.warn(message, error),
     });
   }, [
+    clearRunTracking,
+    client,
+    dispatch,
+    isDisconnectLikeError,
     loadAgentHistory,
-    params.clearRunTracking,
-    params.client,
-    params.dispatch,
-    params.isDisconnectLikeError,
-    params.status,
+    status,
     useDomainApiReads,
   ]);
 
   useEffect(() => {
-    if (params.status !== "connected") return;
+    if (status !== "connected") return;
     void loadSummarySnapshot();
-  }, [loadSummarySnapshot, params.status]);
+  }, [loadSummarySnapshot, status]);
 
   useEffect(() => {
     const reconcileIntent = resolveRuntimeSyncReconcilePollingIntent({
-      status: params.status,
+      status,
     });
     if (reconcileIntent.kind === "stop") return;
     void reconcileRunningAgents();
@@ -274,23 +359,23 @@ export function useRuntimeSyncController(
     return () => {
       window.clearInterval(timer);
     };
-  }, [params.status, reconcileRunningAgents]);
+  }, [reconcileRunningAgents, status]);
 
   useEffect(() => {
     const bootstrapAgentIds = resolveRuntimeSyncBootstrapHistoryAgentIds({
-      status: params.status,
-      agents: params.agents,
+      status,
+      agents,
     });
     for (const agentId of bootstrapAgentIds) {
       void loadAgentHistory(agentId);
     }
-  }, [loadAgentHistory, params.agents, params.status]);
+  }, [agents, loadAgentHistory, status]);
 
   useEffect(() => {
     const pollingIntent = resolveRuntimeSyncFocusedHistoryPollingIntent({
-      status: params.status,
-      focusedAgentId: params.focusedAgentId,
-      focusedAgentRunning: params.focusedAgentRunning,
+      status,
+      focusedAgentId,
+      focusedAgentRunning,
     });
     if (pollingIntent.kind === "stop") return;
     void loadAgentHistory(pollingIntent.agentId);
@@ -305,12 +390,12 @@ export function useRuntimeSyncController(
     return () => {
       window.clearInterval(timer);
     };
-  }, [loadAgentHistory, params.focusedAgentId, params.focusedAgentRunning, params.status]);
+  }, [focusedAgentId, focusedAgentRunning, loadAgentHistory, status]);
 
   useEffect(() => {
     if (useDomainApiReads) return;
-    if (!params.client.onGap) return;
-    return params.client.onGap((info) => {
+    if (!client.onGap) return;
+    return client.onGap((info) => {
       const recoveryIntent = resolveRuntimeSyncGapRecoveryIntent();
       console.warn(`Gateway event gap expected ${info.expected}, received ${info.received}.`);
       if (recoveryIntent.refreshSummarySnapshot) {
@@ -320,7 +405,7 @@ export function useRuntimeSyncController(
         void reconcileRunningAgents();
       }
     });
-  }, [loadSummarySnapshot, params.client, reconcileRunningAgents, useDomainApiReads]);
+  }, [client, loadSummarySnapshot, reconcileRunningAgents, useDomainApiReads]);
 
   return {
     loadSummarySnapshot,

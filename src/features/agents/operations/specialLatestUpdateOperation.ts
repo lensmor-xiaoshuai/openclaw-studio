@@ -42,7 +42,7 @@ const findLatestHeartbeatResponse = (messages: ChatHistoryMessage[]) => {
   return latestResponse;
 };
 
-export type SpecialLatestUpdateDeps = {
+type SpecialLatestUpdateDeps = {
   callGateway: (method: string, params: unknown) => Promise<unknown>;
   listCronJobs: () => Promise<{ jobs: CronJobSummary[] }>;
   resolveCronJobForAgent: (jobs: CronJobSummary[], agentId: string) => CronJobSummary | null;
@@ -55,7 +55,7 @@ export type SpecialLatestUpdateDeps = {
   logError: (message: string) => void;
 };
 
-export type SpecialLatestUpdateOperation = {
+type SpecialLatestUpdateOperation = {
   update: (agentId: string, agent: AgentState, message: string) => Promise<void>;
   refreshHeartbeat: (agents: AgentState[]) => void;
   clearInFlight: (agentId: string) => void;

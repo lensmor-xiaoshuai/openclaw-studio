@@ -78,6 +78,7 @@ Flow:
 
 ### 2b) Control-plane domain API mode + replay/history
 - **Authoritative mode source**: `src/app/page.tsx` derives `useDomainApiMode` only from `/api/studio` (`domainApiModeEnabled === true`). Client env checks are not used for runtime request routing in the main app flow.
+- **Legacy WS suppression in domain mode**: `useGatewayConnection` in `src/lib/gateway/GatewayClient.ts` does not auto-open or auto-retry `/api/gateway/ws` when `domainApiModeEnabled === true`; legacy browser WS remains available for explicit legacy-mode/diagnostic use.
 - **Live stream replay contract** (`/api/runtime/stream`): with `Last-Event-ID > 0`, replay starts after that id; without `Last-Event-ID`, replay starts from the recent outbox tail (`outboxHead - REPLAY_LIMIT`) to avoid stale full-history startup replays.
 - **Gap-free stream bootstrap sequencing** (`/api/runtime/stream`): stream startup subscribes first, buffers startup live rows, fetches replay from the effective cursor/floor, drains buffered rows in ascending outbox id order, and emits all rows through one monotonic id guard (`entry.id > lastDeliveredId`). This prevents replay/subscribe boundary drops and replay/live overlap duplicates in reconnect and fresh-connect paths.
 - **History pagination contract** (`/api/runtime/agents/[agentId]/history`): accepts `limit` and optional `beforeOutboxId` (exclusive upper bound), returns `entries` in ascending outbox order plus `hasMore` and `nextBeforeOutboxId`. Initial reads fetch the newest window; “load more” requests pass the returned cursor.
@@ -106,6 +107,7 @@ Flow:
 
 ## Cross-cutting concerns
 - **Configuration**: environment variables are read directly from `process.env`. The browser uses `NEXT_PUBLIC_GATEWAY_URL` only as a default upstream URL when Studio settings are missing; the Studio server persists upstream URL/token in `<state dir>/openclaw-studio/settings.json` and the WS proxy loads them via `server/studio-settings.js`. State path resolution lives in `lib/clawdbot/paths.ts`, honoring `OPENCLAW_STATE_DIR`. When Studio token is missing, settings loaders can fall back to token/port from `<state dir>/openclaw.json`. Loopback-IP gateway URLs are normalized to `localhost` in Studio settings, and the WS proxy rewrites loopback upstream origins to `localhost` for control-UI secure-context compatibility. The optional Studio access gate is enabled by `STUDIO_ACCESS_TOKEN` (`server/access-gate.js`).
+- **Runtime durability + startup guard**: domain-mode runtime projection/outbox persistence is stored in `${resolveStateDir()}/openclaw-studio/runtime.db` via `better-sqlite3` (`src/lib/controlplane/projection-store.ts`). Startup scripts (`verify:native-runtime:repair` for `dev` and `verify:native-runtime:check` for `start`) verify native addon compatibility before server boot.
 - **Testing**: Playwright e2e runs Studio with an isolated `OPENCLAW_STATE_DIR` so the Studio WS proxy does not read real upstream gateway settings from the developer machine.
 - **Logging**: API routes and the gateway client use built-in `console.*` logging.
 - **Error handling**:

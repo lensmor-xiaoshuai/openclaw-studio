@@ -30,7 +30,7 @@ const TOOL_CALL_PREFIX = "[[tool]]";
 const TOOL_RESULT_PREFIX = "[[tool-result]]";
 const META_PREFIX = "[[meta]]";
 
-export type AgentInstructionParams = {
+type AgentInstructionParams = {
   message: string;
 };
 

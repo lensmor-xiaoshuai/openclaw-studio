@@ -1,7 +1,7 @@
 import { GatewayResponseError, type GatewayClient } from "@/lib/gateway/GatewayClient";
 
-export type GatewayExecApprovalSecurity = "deny" | "allowlist" | "full";
-export type GatewayExecApprovalAsk = "off" | "on-miss" | "always";
+type GatewayExecApprovalSecurity = "deny" | "allowlist" | "full";
+type GatewayExecApprovalAsk = "off" | "on-miss" | "always";
 
 type ExecAllowlistEntry = {
   id?: string;

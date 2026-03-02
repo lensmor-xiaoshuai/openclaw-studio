@@ -1,4 +1,4 @@
-export type GatewayErrorPayload = {
+type GatewayErrorPayload = {
   code: string;
   message: string;
   details?: unknown;

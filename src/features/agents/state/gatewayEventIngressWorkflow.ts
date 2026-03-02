@@ -11,7 +11,7 @@ export type CronTranscriptIntent = {
   activityAtMs: number | null;
 };
 
-export type GatewayEventIngressDecision = {
+type GatewayEventIngressDecision = {
   approvalEffects: ExecApprovalEventEffects | null;
   cronDedupeKeyToRecord: string | null;
   cronTranscriptIntent: CronTranscriptIntent | null;

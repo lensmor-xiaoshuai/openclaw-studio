@@ -1,6 +1,6 @@
 export type GatewayStatus = "disconnected" | "connecting" | "connected";
 
-export type RestartObservation = {
+type RestartObservation = {
   sawDisconnect: boolean;
 };
 

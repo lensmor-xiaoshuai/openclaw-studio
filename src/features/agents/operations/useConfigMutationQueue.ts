@@ -24,7 +24,7 @@ type QueuedConfigMutation = {
   reject: (error: unknown) => void;
 };
 
-export type ActiveConfigMutation = {
+type ActiveConfigMutation = {
   kind: ConfigMutationKind;
   label: string;
 };

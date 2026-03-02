@@ -4,7 +4,10 @@ import type {
   ControlPlaneRuntimeSnapshot,
 } from "@/lib/controlplane/contracts";
 import { OpenClawGatewayAdapter, type OpenClawAdapterOptions } from "@/lib/controlplane/openclaw-adapter";
-import { SQLiteControlPlaneProjectionStore } from "@/lib/controlplane/projection-store";
+import {
+  SQLiteControlPlaneProjectionStore,
+  type BackfillAgentOutboxResult,
+} from "@/lib/controlplane/projection-store";
 
 const DOMAIN_MODE_FALSE_VALUES = new Set(["0", "false", "no", "off"]);
 
@@ -20,7 +23,7 @@ const readDomainApiMode = (env: NodeJS.ProcessEnv = process.env): boolean => {
   return !DOMAIN_MODE_FALSE_VALUES.has(raw);
 };
 
-export type ControlPlaneRuntimeOptions = {
+type ControlPlaneRuntimeOptions = {
   adapterOptions?: OpenClawAdapterOptions;
   dbPath?: string;
 };
@@ -38,10 +41,6 @@ export class ControlPlaneRuntime {
     });
   }
 
-  isDomainApiModeEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
-    return readDomainApiMode(env);
-  }
-
   async ensureStarted(): Promise<void> {
     await this.adapter.start();
   }
@@ -56,6 +55,18 @@ export class ControlPlaneRuntime {
 
   eventsAfter(lastSeenId: number, limit?: number): ControlPlaneOutboxEntry[] {
     return this.store.readOutboxAfter(lastSeenId, limit);
+  }
+
+  eventsBeforeForAgent(
+    agentId: string,
+    beforeOutboxId: number,
+    limit?: number
+  ): ControlPlaneOutboxEntry[] {
+    return this.store.readAgentOutboxBefore(agentId, beforeOutboxId, limit);
+  }
+
+  backfillAgentHistoryIndex(beforeOutboxId: number, limit?: number): BackfillAgentOutboxResult {
+    return this.store.backfillAgentOutboxBefore(beforeOutboxId, limit);
   }
 
   subscribe(handler: (entry: ControlPlaneOutboxEntry) => void): () => void {
@@ -76,7 +87,11 @@ export class ControlPlaneRuntime {
   private handleDomainEvent(event: ControlPlaneDomainEvent): void {
     const entry = this.store.applyDomainEvent(event);
     for (const subscriber of this.eventSubscribers) {
-      subscriber(entry);
+      try {
+        subscriber(entry);
+      } catch (err) {
+        console.error("Control-plane event subscriber failed.", err);
+      }
     }
   }
 }

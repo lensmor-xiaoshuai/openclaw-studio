@@ -4,6 +4,7 @@ import {
   type GatewayClient,
   type GatewaySessionsPatchResult,
 } from "@/lib/gateway/GatewayClient";
+import type { RuntimeWriteTransport } from "@/features/agents/operations/runtimeWriteTransport";
 
 type SessionSettingField = "model" | "thinkingLevel";
 
@@ -33,10 +34,11 @@ type SessionSettingsDispatchAction =
 
 type SessionSettingsDispatch = (action: SessionSettingsDispatchAction) => void;
 
-export type ApplySessionSettingMutationParams = {
+type ApplySessionSettingMutationParams = {
   agents: AgentSessionState[];
   dispatch: SessionSettingsDispatch;
   client: GatewayClient;
+  runtimeWriteTransport?: RuntimeWriteTransport;
   agentId: string;
   sessionKey: string;
   field: SessionSettingField;
@@ -58,6 +60,7 @@ export const applySessionSettingMutation = async ({
   agents,
   dispatch,
   client,
+  runtimeWriteTransport,
   agentId,
   sessionKey,
   field,
@@ -75,11 +78,16 @@ export const applySessionSettingMutation = async ({
     },
   });
   try {
-    const result = await syncGatewaySessionSettings({
-      client,
-      sessionKey,
-      ...(field === "model" ? { model: value ?? null } : { thinkingLevel: value ?? null }),
-    });
+    const result = (runtimeWriteTransport
+      ? await runtimeWriteTransport.sessionSettingsSync({
+          sessionKey,
+          ...(field === "model" ? { model: value ?? null } : { thinkingLevel: value ?? null }),
+        })
+      : await syncGatewaySessionSettings({
+          client,
+          sessionKey,
+          ...(field === "model" ? { model: value ?? null } : { thinkingLevel: value ?? null }),
+        })) as GatewaySessionsPatchResult;
     const patch: {
       model?: string | null;
       thinkingLevel?: string | null;

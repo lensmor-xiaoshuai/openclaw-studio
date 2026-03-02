@@ -79,12 +79,19 @@ const hasCompleteDeviceAuth = (params) => {
   );
 };
 
+const isExpectedCloseBeforeOpenError = (error) => {
+  if (!(error instanceof Error)) return false;
+  const message = error.message.toLowerCase();
+  return message.includes("closed before the connection was established");
+};
+
 function createGatewayProxy(options) {
   const {
     loadUpstreamSettings,
     allowWs = (req) => resolvePathname(req.url) === "/api/gateway/ws",
     log = () => {},
     logError = (msg, err) => console.error(msg, err),
+    createUpstreamWebSocket = (url, wsOptions) => new WebSocket(url, wsOptions),
   } = options || {};
 
   if (typeof loadUpstreamSettings !== "function") {
@@ -186,7 +193,16 @@ function createGatewayProxy(options) {
           return;
         }
 
-        upstreamWs = new WebSocket(upstreamUrl, { origin: upstreamOrigin });
+        try {
+          upstreamWs = createUpstreamWebSocket(upstreamUrl, { origin: upstreamOrigin });
+        } catch (err) {
+          logError("Upstream gateway WebSocket creation failed.", err);
+          sendConnectError(
+            "studio.upstream_error",
+            "Failed to connect to upstream gateway WebSocket."
+          );
+          return;
+        }
 
         upstreamWs.on("open", () => {
           upstreamReady = true;
@@ -230,6 +246,10 @@ function createGatewayProxy(options) {
         });
 
         upstreamWs.on("error", (err) => {
+          if (isExpectedCloseBeforeOpenError(err) && closed) {
+            log("Suppressed upstream close-before-open race.");
+            return;
+          }
           logError("Upstream gateway WebSocket error.", err);
           sendConnectError(
             "studio.upstream_error",

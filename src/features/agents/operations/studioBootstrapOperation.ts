@@ -6,7 +6,6 @@ import {
   planFocusedSelectionPatch,
 } from "@/features/agents/operations/studioBootstrapWorkflow";
 import type { AgentState, AgentStoreSeed, FocusFilter } from "@/features/agents/state/store";
-import { isStudioDomainIntentModeEnabled } from "@/lib/controlplane/domain-mode";
 import { fetchJson } from "@/lib/http";
 import type { GatewayModelPolicySnapshot } from "@/lib/gateway/models";
 import type { StudioSettings, StudioSettingsPatch } from "@/lib/studio/settings";
@@ -30,10 +29,11 @@ export async function runStudioBootstrapLoadOperation(params: {
   isDisconnectLikeError: (err: unknown) => boolean;
   preferredSelectedAgentId: string | null;
   hasCurrentSelection: boolean;
+  useDomainApiMode: boolean;
   logError?: (message: string, error: unknown) => void;
 }): Promise<StudioBootstrapLoadCommand[]> {
   try {
-    const result = isStudioDomainIntentModeEnabled()
+    const result = params.useDomainApiMode
       ? (
           await fetchJson<{ result: Awaited<ReturnType<typeof hydrateAgentFleetFromGateway>> }>(
             "/api/runtime/fleet",
@@ -130,7 +130,7 @@ export function executeStudioBootstrapLoadCommands(params: {
   }
 }
 
-export type StudioFocusedPreferenceLoadCommand =
+type StudioFocusedPreferenceLoadCommand =
   | { kind: "set-focused-preferences-loaded"; value: boolean }
   | { kind: "set-preferred-selected-agent-id"; agentId: string | null }
   | { kind: "set-focus-filter"; filter: FocusFilter }
@@ -208,7 +208,7 @@ export function executeStudioFocusedPreferenceLoadCommands(params: {
   }
 }
 
-export type StudioFocusedPatchCommand = {
+type StudioFocusedPatchCommand = {
   kind: "schedule-settings-patch";
   patch: StudioSettingsPatch;
   debounceMs: number;

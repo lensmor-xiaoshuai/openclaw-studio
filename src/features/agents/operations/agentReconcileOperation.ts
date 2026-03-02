@@ -9,7 +9,7 @@ type GatewayClientLike = {
   call: (method: string, params: unknown) => Promise<unknown>;
 };
 
-export type ReconcileCommand =
+type ReconcileCommand =
   | { kind: "clearRunTracking"; runId: string }
   | { kind: "dispatchUpdateAgent"; agentId: string; patch: Partial<AgentState> }
   | { kind: "requestHistoryRefresh"; agentId: string }

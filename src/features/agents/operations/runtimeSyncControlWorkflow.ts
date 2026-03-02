@@ -1,6 +1,6 @@
 import type { AgentState } from "@/features/agents/state/store";
 
-export type RuntimeSyncStatus = "disconnected" | "connecting" | "connected";
+type RuntimeSyncStatus = "disconnected" | "connecting" | "connected";
 
 export const RUNTIME_SYNC_RECONCILE_INTERVAL_MS = 3000;
 export const RUNTIME_SYNC_FOCUSED_HISTORY_INTERVAL_MS = 4500;
@@ -16,11 +16,11 @@ type RuntimeSyncHistoryBootstrapAgent = Pick<
 
 type RuntimeSyncFocusedPollingAgent = Pick<AgentState, "agentId" | "status">;
 
-export type RuntimeSyncReconcilePollingIntent =
+type RuntimeSyncReconcilePollingIntent =
   | { kind: "start"; intervalMs: number; runImmediately: true }
   | { kind: "stop"; reason: "not-connected" };
 
-export type RuntimeSyncFocusedHistoryPollingIntent =
+type RuntimeSyncFocusedHistoryPollingIntent =
   | { kind: "start"; agentId: string; intervalMs: number; runImmediately: true }
   | {
       kind: "stop";

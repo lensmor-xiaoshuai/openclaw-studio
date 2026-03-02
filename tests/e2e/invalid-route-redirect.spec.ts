@@ -1,8 +1,10 @@
 import { expect, test } from "@playwright/test";
 import { stubStudioRoute } from "./helpers/studioRoute";
+import { stubRuntimeRoutes } from "./helpers/runtimeRoute";
 
 test.beforeEach(async ({ page }) => {
   await stubStudioRoute(page);
+  await stubRuntimeRoutes(page);
 });
 
 test("redirects unknown app routes to root", async ({ page }) => {

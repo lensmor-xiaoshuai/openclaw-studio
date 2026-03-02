@@ -1,5 +1,7 @@
 // @vitest-environment node
 
+import { EventEmitter } from "node:events";
+
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { WebSocket, WebSocketServer } from "ws";
 
@@ -547,6 +549,164 @@ describe("createGatewayProxy", () => {
         closeWebSocketServer(upstream),
         closeHttpServer(proxyHttp),
       ]);
+    }
+  });
+
+  it("suppresses expected close-before-open upstream race errors", async () => {
+    class FakeUpstreamSocket extends EventEmitter {
+      readyState: number = WebSocket.CONNECTING;
+
+      send() {}
+
+      close() {
+        this.readyState = WebSocket.CLOSED;
+        this.emit("error", new Error("WebSocket was closed before the connection was established"));
+        this.emit("close", { code: 1000, reason: "closed" });
+      }
+    }
+
+    const logError = vi.fn();
+    const log = vi.fn();
+    let upstreamSocket: FakeUpstreamSocket | null = null;
+    const { createGatewayProxy } = await import("../../server/gateway-proxy");
+    const proxyHttp = await import("node:http").then((m) => m.createServer());
+    const proxy = createGatewayProxy({
+      loadUpstreamSettings: async () => ({ url: "ws://127.0.0.1:65535", token: "token-123" }),
+      allowWs: (req: { url?: string }) => req.url === "/api/gateway/ws",
+      log,
+      logError,
+      createUpstreamWebSocket: () => {
+        upstreamSocket = new FakeUpstreamSocket();
+        return upstreamSocket;
+      },
+    });
+    proxyHttp.on("upgrade", (req, socket, head) => proxy.handleUpgrade(req, socket, head));
+    await new Promise<void>((resolve) => proxyHttp.listen(0, "127.0.0.1", resolve));
+    const proxyAddr = proxyHttp.address();
+    if (!proxyAddr || typeof proxyAddr === "string") {
+      throw new Error("expected proxy server to have a port");
+    }
+
+    const browser = new WebSocket(`ws://127.0.0.1:${proxyAddr.port}/api/gateway/ws`);
+    try {
+      await waitForEvent(browser, "open");
+      browser.send(
+        JSON.stringify({
+          type: "req",
+          id: "connect-suppress",
+          method: "connect",
+          params: { auth: {} },
+        })
+      );
+      await closeWebSocket(browser);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(upstreamSocket).not.toBeNull();
+      expect(logError).not.toHaveBeenCalled();
+      expect(log).toHaveBeenCalledWith("Suppressed upstream close-before-open race.");
+    } finally {
+      await closeHttpServer(proxyHttp);
+    }
+  });
+
+  it("logs and forwards unexpected upstream socket errors", async () => {
+    class FakeUpstreamSocket extends EventEmitter {
+      readyState: number = WebSocket.CONNECTING;
+
+      send() {}
+
+      close() {
+        this.readyState = WebSocket.CLOSED;
+        this.emit("close", { code: 1000, reason: "closed" });
+      }
+    }
+
+    const logError = vi.fn();
+    const upstreamSocket = new FakeUpstreamSocket();
+    const { createGatewayProxy } = await import("../../server/gateway-proxy");
+    const proxyHttp = await import("node:http").then((m) => m.createServer());
+    const proxy = createGatewayProxy({
+      loadUpstreamSettings: async () => ({ url: "ws://127.0.0.1:65534", token: "token-123" }),
+      allowWs: (req: { url?: string }) => req.url === "/api/gateway/ws",
+      logError,
+      createUpstreamWebSocket: () => upstreamSocket,
+    });
+    proxyHttp.on("upgrade", (req, socket, head) => proxy.handleUpgrade(req, socket, head));
+    await new Promise<void>((resolve) => proxyHttp.listen(0, "127.0.0.1", resolve));
+    const proxyAddr = proxyHttp.address();
+    if (!proxyAddr || typeof proxyAddr === "string") {
+      throw new Error("expected proxy server to have a port");
+    }
+
+    const browser = new WebSocket(`ws://127.0.0.1:${proxyAddr.port}/api/gateway/ws`);
+    try {
+      await waitForEvent(browser, "open");
+      browser.send(
+        JSON.stringify({
+          type: "req",
+          id: "connect-forward-error",
+          method: "connect",
+          params: { auth: {} },
+        })
+      );
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      upstreamSocket.emit("error", new Error("socket boom"));
+
+      const [rawMessage] = await waitForEvent<[WebSocket.RawData]>(browser, "message");
+      const response = JSON.parse(String(rawMessage ?? ""));
+      expect(response).toMatchObject({
+        type: "res",
+        id: "connect-forward-error",
+        ok: false,
+        error: { code: "studio.upstream_error" },
+      });
+      expect(logError).toHaveBeenCalledTimes(1);
+    } finally {
+      await Promise.all([closeWebSocket(browser), closeHttpServer(proxyHttp)]);
+    }
+  });
+
+  it("returns structured upstream error when upstream websocket creation throws", async () => {
+    const logError = vi.fn();
+    const { createGatewayProxy } = await import("../../server/gateway-proxy");
+    const proxyHttp = await import("node:http").then((m) => m.createServer());
+    const proxy = createGatewayProxy({
+      loadUpstreamSettings: async () => ({ url: "ws://127.0.0.1:65534", token: "token-123" }),
+      allowWs: (req: { url?: string }) => req.url === "/api/gateway/ws",
+      logError,
+      createUpstreamWebSocket: () => {
+        throw new Error("constructor failed");
+      },
+    });
+    proxyHttp.on("upgrade", (req, socket, head) => proxy.handleUpgrade(req, socket, head));
+    await new Promise<void>((resolve) => proxyHttp.listen(0, "127.0.0.1", resolve));
+    const proxyAddr = proxyHttp.address();
+    if (!proxyAddr || typeof proxyAddr === "string") {
+      throw new Error("expected proxy server to have a port");
+    }
+
+    const browser = new WebSocket(`ws://127.0.0.1:${proxyAddr.port}/api/gateway/ws`);
+    try {
+      await waitForEvent(browser, "open");
+      browser.send(
+        JSON.stringify({
+          type: "req",
+          id: "connect-creation-throw",
+          method: "connect",
+          params: { auth: {} },
+        })
+      );
+
+      const [rawMessage] = await waitForEvent<[WebSocket.RawData]>(browser, "message");
+      const response = JSON.parse(String(rawMessage ?? ""));
+      expect(response).toMatchObject({
+        type: "res",
+        id: "connect-creation-throw",
+        ok: false,
+        error: { code: "studio.upstream_error" },
+      });
+      expect(logError).toHaveBeenCalledTimes(1);
+    } finally {
+      await Promise.all([closeWebSocket(browser), closeHttpServer(proxyHttp)]);
     }
   });
 });

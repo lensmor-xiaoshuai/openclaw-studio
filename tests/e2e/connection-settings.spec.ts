@@ -1,15 +1,17 @@
 import { expect, test } from "@playwright/test";
 import { stubStudioRoute } from "./helpers/studioRoute";
+import { stubRuntimeRoutes } from "./helpers/runtimeRoute";
 
 test("connection settings persist to the studio settings API", async ({ page }) => {
   await stubStudioRoute(page);
+  await stubRuntimeRoutes(page);
 
   await page.goto("/");
   await page.getByTestId("studio-menu-toggle").click();
   await page.getByTestId("gateway-settings-toggle").click();
-  await expect(page.getByLabel("Upstream URL")).toBeVisible();
+  await expect(page.getByLabel(/Upstream (gateway )?URL/i)).toBeVisible();
 
-  await page.getByLabel("Upstream URL").fill("ws://gateway.example:18789");
+  await page.getByLabel(/Upstream (gateway )?URL/i).fill("ws://gateway.example:18789");
   await page.getByLabel("Upstream token").fill("token-123");
 
   const request = await page.waitForRequest((req) => {

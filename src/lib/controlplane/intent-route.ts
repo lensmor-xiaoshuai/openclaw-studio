@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 
 import { ControlPlaneGatewayError } from "@/lib/controlplane/openclaw-adapter";
-import { getControlPlaneRuntime, isStudioDomainApiModeEnabled } from "@/lib/controlplane/runtime";
+import { serializeRuntimeInitFailure } from "@/lib/controlplane/runtime-init-errors";
+import { bootstrapDomainRuntime } from "@/lib/controlplane/runtime-route-bootstrap";
+import type { ControlPlaneRuntime } from "@/lib/controlplane/runtime";
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value && typeof value === "object" && !Array.isArray(value));
@@ -19,22 +21,25 @@ const isConfigConflict = (error: ControlPlaneGatewayError): boolean => {
 };
 
 export const ensureDomainIntentRuntime = async (): Promise<
-  ReturnType<typeof getControlPlaneRuntime> | Response
+  ControlPlaneRuntime | Response
 > => {
-  if (!isStudioDomainApiModeEnabled()) {
+  const bootstrap = await bootstrapDomainRuntime();
+  if (bootstrap.kind === "mode-disabled") {
     return NextResponse.json({ error: "domain_api_mode_disabled" }, { status: 404 });
   }
-  const runtime = getControlPlaneRuntime();
-  try {
-    await runtime.ensureStarted();
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "controlplane_start_failed";
+  if (bootstrap.kind === "runtime-init-failed") {
     return NextResponse.json(
-      { error: message, code: "GATEWAY_UNAVAILABLE", reason: "gateway_unavailable" },
+      serializeRuntimeInitFailure(bootstrap.failure),
       { status: 503 }
     );
   }
-  return runtime;
+  if (bootstrap.kind === "start-failed") {
+    return NextResponse.json(
+      { error: bootstrap.message, code: "GATEWAY_UNAVAILABLE", reason: "gateway_unavailable" },
+      { status: 503 }
+    );
+  }
+  return bootstrap.runtime;
 };
 
 export const parseIntentBody = async (request: Request): Promise<Record<string, unknown> | Response> => {

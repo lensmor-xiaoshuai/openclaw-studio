@@ -4,14 +4,14 @@ import { randomUUID } from "node:crypto";
 
 import { resolveStateDir } from "@/lib/clawdbot/paths";
 
-export type GatewayAgentStateMove = { from: string; to: string };
+type GatewayAgentStateMove = { from: string; to: string };
 
-export type TrashAgentStateResult = {
+type TrashAgentStateResult = {
   trashDir: string;
   moved: GatewayAgentStateMove[];
 };
 
-export type RestoreAgentStateResult = {
+type RestoreAgentStateResult = {
   restored: GatewayAgentStateMove[];
 };
 

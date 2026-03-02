@@ -1,8 +1,8 @@
 import type { AgentState } from "@/features/agents/state/store";
 
-export type SummarySnapshotSeed = Pick<AgentState, "sessionCreated" | "sessionKey">;
+type SummarySnapshotSeed = Pick<AgentState, "sessionCreated" | "sessionKey">;
 
-export type SummarySnapshotIntent =
+type SummarySnapshotIntent =
   | { kind: "skip" }
   | {
       kind: "fetch";
@@ -11,7 +11,7 @@ export type SummarySnapshotIntent =
       maxChars: number;
     };
 
-export type ReconcileEligibility = {
+type ReconcileEligibility = {
   shouldCheck: boolean;
   reason: "ok" | "not-running" | "missing-run-id" | "not-session-created";
 };

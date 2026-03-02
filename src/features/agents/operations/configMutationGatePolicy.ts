@@ -1,6 +1,6 @@
 import type { GatewayStatus } from "./gatewayRestartPolicy";
 
-export type ConfigMutationGateInput = {
+type ConfigMutationGateInput = {
   status: GatewayStatus;
   hasRunningAgents: boolean;
   nextMutationRequiresIdleAgents: boolean;

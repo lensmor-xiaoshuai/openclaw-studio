@@ -39,7 +39,7 @@ type LifecycleTransitionIgnore = {
   kind: "ignore";
 };
 
-export type LifecycleTransition =
+type LifecycleTransition =
   | LifecycleTransitionStart
   | LifecycleTransitionTerminal
   | LifecycleTransitionIgnore;
@@ -99,7 +99,7 @@ export type SummaryStatusSnapshot = {
   };
 };
 
-export type SummaryPreviewItem = {
+type SummaryPreviewItem = {
   role: "user" | "assistant" | "tool" | "system" | "other";
   text: string;
   timestamp?: number | string;
@@ -123,7 +123,7 @@ export type SummarySnapshotPatch = {
 
 export type ChatHistoryMessage = Record<string, unknown>;
 
-export type HistoryLinesResult = {
+type HistoryLinesResult = {
   lines: string[];
   lastAssistant: string | null;
   lastAssistantAt: number | null;
@@ -132,7 +132,7 @@ export type HistoryLinesResult = {
   lastUserAt: number | null;
 };
 
-export type HistorySyncPatchInput = {
+type HistorySyncPatchInput = {
   messages: ChatHistoryMessage[];
   currentLines: string[];
   loadedAt: number;
@@ -140,7 +140,7 @@ export type HistorySyncPatchInput = {
   runId: string | null;
 };
 
-export type GatewayEventKind =
+type GatewayEventKind =
   | "summary-refresh"
   | "runtime-chat"
   | "runtime-agent"

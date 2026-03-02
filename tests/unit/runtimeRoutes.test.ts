@@ -164,6 +164,35 @@ describe("runtime routes", () => {
     expect(body.reason).toBe("runtime_init_failed");
   });
 
+  it("summary route returns native mismatch remediation when runtime init fails on ABI drift", async () => {
+    vi.resetModules();
+    vi.doMock("@/lib/controlplane/runtime", () => ({
+      isStudioDomainApiModeEnabled: () => true,
+      getControlPlaneRuntime: () => {
+        const error = new Error(
+          "The module '/tmp/better_sqlite3.node' was compiled against a different Node.js version using NODE_MODULE_VERSION 141."
+        ) as Error & { code: string };
+        error.code = "ERR_DLOPEN_FAILED";
+        throw error;
+      },
+    }));
+
+    const mod = await import("@/app/api/runtime/summary/route");
+    const response = await mod.GET();
+    expect(response.status).toBe(503);
+    const body = await response.json() as {
+      code: string;
+      reason: string;
+      remediation?: { commands?: string[] };
+    };
+    expect(body.code).toBe("NATIVE_MODULE_MISMATCH");
+    expect(body.reason).toBe("native_module_mismatch");
+    expect(body.remediation?.commands).toEqual([
+      "npm rebuild better-sqlite3",
+      "npm install",
+    ]);
+  });
+
   it("summary route returns 404 when domain mode is disabled", async () => {
     vi.resetModules();
     vi.doMock("@/lib/controlplane/runtime", () => ({
@@ -1180,6 +1209,91 @@ describe("runtime routes", () => {
       { agentId: "beta", name: "Beta Agent", sessionKey: "agent:beta:main" },
     ]);
     expect(body.result.sessionCreatedAgentIds).toEqual(["alpha", "beta"]);
+  });
+
+  it("runtime fleet route degrades when hydration fails with missing scope", async () => {
+    vi.resetModules();
+    vi.doMock("@/lib/controlplane/runtime", () => ({
+      isStudioDomainApiModeEnabled: () => true,
+      getControlPlaneRuntime: () => ({
+        ensureStarted: async () => {},
+        snapshot: () => ({
+          status: "connected",
+          reason: null,
+          asOf: "2026-02-28T02:40:00.000Z",
+          outboxHead: 3,
+        }),
+        eventsAfter: () => [
+          {
+            id: 3,
+            event: {
+              type: "gateway.event",
+              event: "runtime.delta",
+              seq: 12,
+              payload: {
+                sessionKey: "agent:alpha:main",
+              },
+              asOf: "2026-02-28T02:40:03.000Z",
+            },
+            createdAt: "2026-02-28T02:40:03.000Z",
+          },
+        ],
+        callGateway: vi.fn(),
+      }),
+    }));
+    vi.doMock("@/lib/studio/settings-store", () => ({
+      loadStudioSettings: () => ({
+        version: 1,
+        gateway: { url: "ws://localhost:3000/ws", token: "" },
+        localGatewayDefaults: { url: "", token: "" },
+        focused: {},
+        avatars: {},
+      }),
+    }));
+    vi.doMock("@/lib/controlplane/degraded-read", async () => {
+      const actual = await vi.importActual<typeof import("@/lib/controlplane/degraded-read")>(
+        "@/lib/controlplane/degraded-read"
+      );
+      return {
+        ...actual,
+        probeOpenClawLocalState: vi.fn(async () => ({
+          at: "2026-02-28T02:41:00.000Z",
+          status: { ok: false, error: "openclaw_cli_not_found" },
+          sessions: { ok: false, error: "openclaw_cli_not_found" },
+        })),
+      };
+    });
+    vi.doMock("@/features/agents/operations/agentFleetHydration", () => ({
+      hydrateAgentFleetFromGateway: vi.fn(async () => {
+        const error = new Error("missing scope: operator.read") as Error & { code: string };
+        error.code = "INVALID_REQUEST";
+        throw error;
+      }),
+    }));
+
+    const route = await import("@/app/api/runtime/fleet/route");
+    const response = await route.POST(
+      new Request("http://localhost/api/runtime/fleet", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cachedConfigSnapshot: null }),
+      })
+    );
+
+    expect(response.status).toBe(200);
+    const body = await response.json() as {
+      enabled: boolean;
+      degraded: boolean;
+      code: string;
+      reason: string;
+      result: { seeds: Array<{ agentId: string }>; sessionCreatedAgentIds: string[] };
+    };
+    expect(body.enabled).toBe(true);
+    expect(body.degraded).toBe(true);
+    expect(body.code).toBe("INSUFFICIENT_SCOPE");
+    expect(body.reason).toBe("insufficient_scope");
+    expect(body.result.seeds.map((entry) => entry.agentId)).toEqual(["alpha"]);
+    expect(body.result.sessionCreatedAgentIds).toEqual(["alpha"]);
   });
 
   it("runtime fleet route returns 503 when runtime initialization fails", async () => {

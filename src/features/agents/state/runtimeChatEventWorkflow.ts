@@ -45,7 +45,7 @@ export type RuntimeChatWorkflowInput = {
   thinkingStartedAtMs: number | null;
 };
 
-export type RuntimeChatWorkflowResult = {
+type RuntimeChatWorkflowResult = {
   commands: RuntimeChatWorkflowCommand[];
 };
 

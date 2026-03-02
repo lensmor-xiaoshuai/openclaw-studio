@@ -66,7 +66,7 @@ export const buildMutatingMutationBlock = (block: MutationBlockState): MutationB
   };
 };
 
-export type MutationPostRunIntent =
+type MutationPostRunIntent =
   | { kind: "clear" }
   | { kind: "awaiting-restart"; patch: { phase: "awaiting-restart"; sawDisconnect: boolean } };
 
@@ -85,7 +85,7 @@ export const resolveMutationPostRunIntent = (params: {
   return { kind: "clear" };
 };
 
-export type MutationSideEffectCommand =
+type MutationSideEffectCommand =
   | { kind: "reload-agents" }
   | { kind: "clear-mutation-block" }
   | { kind: "set-mobile-pane"; pane: "chat" }
@@ -107,7 +107,7 @@ export const buildMutationSideEffectCommands = (params: {
   return [{ kind: "patch-mutation-block", patch: postRunIntent.patch }];
 };
 
-export type MutationTimeoutIntent =
+type MutationTimeoutIntent =
   | { kind: "none" }
   | { kind: "timeout"; reason: "create-timeout" | "rename-timeout" | "delete-timeout" };
 
@@ -143,29 +143,29 @@ export const resolveMutationTimeoutIntent = (params: {
 
 export type MutationWorkflowKind = "rename-agent" | "delete-agent";
 
-export type MutationWorkflowResult = {
+type MutationWorkflowResult = {
   disposition: "completed" | "awaiting-restart";
 };
 
-export type AwaitingRestartPatch = {
+type AwaitingRestartPatch = {
   phase: "awaiting-restart";
   sawDisconnect: boolean;
 };
 
-export type MutationWorkflowPostRunEffects = {
+type MutationWorkflowPostRunEffects = {
   shouldReloadAgents: boolean;
   shouldClearBlock: boolean;
   awaitingRestartPatch: AwaitingRestartPatch | null;
 };
 
-export type MutationWorkflowDeps = {
+type MutationWorkflowDeps = {
   executeMutation: () => Promise<void>;
   shouldAwaitRemoteRestart: () => Promise<boolean>;
 };
 
-export type AgentConfigMutationLifecycleKind = MutationWorkflowKind;
+type AgentConfigMutationLifecycleKind = MutationWorkflowKind;
 
-export type AgentConfigMutationLifecycleDeps = {
+type AgentConfigMutationLifecycleDeps = {
   enqueueConfigMutation: (params: {
     kind: ConfigMutationKind;
     label: string;
@@ -212,7 +212,7 @@ export type CreateAgentMutationLifecycleDeps = {
   now?: () => number;
 };
 
-export type MutationStatusBlock = {
+type MutationStatusBlock = {
   phase: "queued" | "mutating" | "awaiting-restart";
   sawDisconnect: boolean;
 };

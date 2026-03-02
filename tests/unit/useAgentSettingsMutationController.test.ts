@@ -12,6 +12,7 @@ import { deleteAgentViaStudio } from "@/features/agents/operations/deleteAgentOp
 import { performCronCreateFlow } from "@/features/agents/operations/cronCreateOperation";
 import { updateAgentPermissionsViaStudio } from "@/features/agents/operations/agentPermissionsOperation";
 import { runAgentConfigMutationLifecycle } from "@/features/agents/operations/mutationLifecycleWorkflow";
+import { createRuntimeWriteTransport } from "@/features/agents/operations/runtimeWriteTransport";
 import { runCronJobNow, removeCronJob } from "@/lib/cron/types";
 import { shouldAwaitDisconnectRestartForRemoteMutation } from "@/lib/gateway/gatewayReloadMode";
 import {
@@ -163,8 +164,15 @@ const renderController = (overrides?: Partial<Parameters<typeof useAgentSettings
   const client = {
     call: vi.fn(async () => ({})),
   };
+  const runtimeWriteTransport = createRuntimeWriteTransport({
+    client: client as never,
+    useDomainIntents: overrides?.useDomainIntents ?? false,
+  });
 
-  const params: Parameters<typeof useAgentSettingsMutationController>[0] = {
+  const paramsBase: Omit<
+    Parameters<typeof useAgentSettingsMutationController>[0],
+    "runtimeWriteTransport" | "useDomainIntents"
+  > = {
     client: client as never,
     status: "connected",
     isLocalGateway: false,
@@ -183,6 +191,11 @@ const renderController = (overrides?: Partial<Parameters<typeof useAgentSettings
     setMobilePaneChat,
     setError,
     ...(overrides ?? {}),
+  };
+  const params: Parameters<typeof useAgentSettingsMutationController>[0] = {
+    ...paramsBase,
+    runtimeWriteTransport,
+    useDomainIntents: overrides?.useDomainIntents ?? false,
   };
 
   const valueRef: { current: ControllerValue | null } = { current: null };
@@ -234,7 +247,6 @@ describe("useAgentSettingsMutationController", () => {
   const mockedUpdateSkill = vi.mocked(updateSkill);
 
   beforeEach(() => {
-    process.env.NEXT_PUBLIC_STUDIO_DOMAIN_API_MODE = "false";
     restartBlockHookParams = null;
     mockedDeleteAgentViaStudio.mockReset();
     mockedPerformCronCreateFlow.mockReset();
@@ -278,7 +290,6 @@ describe("useAgentSettingsMutationController", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
-    delete process.env.NEXT_PUBLIC_STUDIO_DOMAIN_API_MODE;
   });
 
   it("delete_denied_by_guard_does_not_run_delete_side_effect", async () => {
@@ -293,7 +304,6 @@ describe("useAgentSettingsMutationController", () => {
   });
 
   it("domain_mode_allows_delete_when_browser_gateway_is_disconnected", async () => {
-    process.env.NEXT_PUBLIC_STUDIO_DOMAIN_API_MODE = "true";
     vi.spyOn(window, "confirm").mockReturnValue(true);
     mockedRunLifecycle.mockImplementation(async ({ deps }) => {
       deps.setQueuedBlock();
@@ -304,7 +314,7 @@ describe("useAgentSettingsMutationController", () => {
     });
     mockedDeleteAgentViaStudio.mockResolvedValue({ trashed: { trashDir: "", moved: [] }, restored: null });
 
-    const ctx = renderController({ status: "disconnected" });
+    const ctx = renderController({ status: "disconnected", useDomainIntents: true });
 
     await act(async () => {
       await ctx.getValue().handleDeleteAgent("agent-1");
@@ -314,7 +324,7 @@ describe("useAgentSettingsMutationController", () => {
     expect(mockedDeleteAgentViaStudio).toHaveBeenCalledWith(
       expect.objectContaining({
         agentId: "agent-1",
-        useDomainIntents: true,
+        runtimeWriteTransport: expect.anything(),
       })
     );
   });

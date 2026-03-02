@@ -15,14 +15,14 @@ import { resolveStudioProxyGatewayUrl } from "@/lib/gateway/proxy-url";
 import { ensureGatewayReloadModeHotForLocalStudio } from "@/lib/gateway/gatewayReloadMode";
 import { GatewayResponseError } from "@/lib/gateway/errors";
 
-export type ReqFrame = {
+type ReqFrame = {
   type: "req";
   id: string;
   method: string;
   params: unknown;
 };
 
-export type ResFrame = {
+type ResFrame = {
   type: "res";
   id: string;
   ok: boolean;
@@ -49,7 +49,7 @@ export type EventFrame = {
   stateVersion?: GatewayStateVersion;
 };
 
-export type GatewayFrame = ReqFrame | ResFrame | EventFrame;
+type GatewayFrame = ReqFrame | ResFrame | EventFrame;
 
 export const parseGatewayFrame = (raw: string): GatewayFrame | null => {
   try {
@@ -114,7 +114,7 @@ type GapHandler = (info: GatewayGapInfo) => void;
 
 export type GatewayStatus = "disconnected" | "connecting" | "connected";
 
-export type GatewayConnectOptions = {
+type GatewayConnectOptions = {
   gatewayUrl: string;
   token?: string;
   authScopeKey?: string;
@@ -123,7 +123,7 @@ export type GatewayConnectOptions = {
 };
 
 export { GatewayResponseError } from "@/lib/gateway/errors";
-export type { GatewayErrorPayload } from "@/lib/gateway/errors";
+;
 
 export class GatewayClient {
   private client: GatewayBrowserClient | null = null;
@@ -333,7 +333,7 @@ export type GatewaySessionsPatchResult = {
   };
 };
 
-export type SyncGatewaySessionSettingsParams = {
+type SyncGatewaySessionSettingsParams = {
   client: GatewayClient;
   sessionKey: string;
   model?: string | null;
@@ -405,7 +405,7 @@ const formatGatewayError = (error: unknown) => {
   return "Unknown gateway error.";
 };
 
-export type GatewayConnectionState = {
+type GatewayConnectionState = {
   client: GatewayClient;
   status: GatewayStatus;
   gatewayUrl: string;
@@ -598,15 +598,23 @@ export const useGatewayConnection = (
   }, [client, gatewayUrl, settingsCoordinator, token]);
 
   useEffect(() => {
+    if (domainApiModeEnabled === true) return;
     if (didAutoConnect.current) return;
     if (!settingsLoaded) return;
     if (!gatewayUrl.trim()) return;
     didAutoConnect.current = true;
     void connect();
-  }, [connect, gatewayUrl, settingsLoaded]);
+  }, [connect, domainApiModeEnabled, gatewayUrl, settingsLoaded]);
 
   // Auto-retry on disconnect (gateway busy, network blip, etc.)
   useEffect(() => {
+    if (domainApiModeEnabled === true) {
+      if (retryTimerRef.current) {
+        clearTimeout(retryTimerRef.current);
+        retryTimerRef.current = null;
+      }
+      return;
+    }
     const attempt = retryAttemptRef.current;
     const delay = resolveGatewayAutoRetryDelayMs({
       status,
@@ -629,7 +637,22 @@ export const useGatewayConnection = (
         retryTimerRef.current = null;
       }
     };
-  }, [connect, connectErrorCode, error, gatewayUrl, status]);
+  }, [connect, connectErrorCode, domainApiModeEnabled, error, gatewayUrl, status]);
+
+  useEffect(() => {
+    if (domainApiModeEnabled !== true) return;
+    if (retryTimerRef.current) {
+      clearTimeout(retryTimerRef.current);
+      retryTimerRef.current = null;
+    }
+    retryAttemptRef.current = 0;
+    didAutoConnect.current = false;
+    setError(null);
+    setConnectErrorCode(null);
+    if (status === "disconnected") return;
+    wasManualDisconnectRef.current = true;
+    client.disconnect();
+  }, [client, domainApiModeEnabled, status]);
 
   // Reset retry count on successful connection
   useEffect(() => {

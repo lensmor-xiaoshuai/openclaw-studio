@@ -45,7 +45,7 @@ type LifecycleTerminalFallbackFireDecisionInput = {
   runId?: string | null;
 };
 
-export type LifecycleTerminalDecisionInput =
+type LifecycleTerminalDecisionInput =
   | LifecycleTerminalEventDecisionInput
   | LifecycleTerminalFallbackFireDecisionInput;
 

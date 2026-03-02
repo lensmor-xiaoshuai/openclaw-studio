@@ -7,7 +7,7 @@ import {
 
 const FOCUSED_PATCH_DEBOUNCE_MS = 300;
 
-export type BootstrapSelectionIntent = {
+type BootstrapSelectionIntent = {
   initialSelectedAgentId: string | undefined;
 };
 
@@ -36,7 +36,7 @@ export function planBootstrapSelection(params: {
   };
 }
 
-export type FocusFilterPatchIntent =
+type FocusFilterPatchIntent =
   | {
       kind: "skip";
       reason: "missing-gateway-key" | "focus-filter-not-touched";
@@ -74,7 +74,7 @@ export function planFocusedFilterPatch(params: {
   };
 }
 
-export type FocusedSelectionPatchIntent =
+type FocusedSelectionPatchIntent =
   | {
       kind: "skip";
       reason:
@@ -124,7 +124,7 @@ export function planFocusedSelectionPatch(params: {
   };
 }
 
-export type FocusedPreferenceRestoreIntent = {
+type FocusedPreferenceRestoreIntent = {
   preferredSelectedAgentId: string | null;
   focusFilter: FocusFilter;
 };

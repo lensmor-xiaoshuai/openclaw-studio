@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { deriveRuntimeFreshness, probeOpenClawLocalState } from "@/lib/controlplane/degraded-read";
+import { serializeRuntimeInitFailure } from "@/lib/controlplane/runtime-init-errors";
 import { bootstrapDomainRuntime } from "@/lib/controlplane/runtime-route-bootstrap";
 
 export const runtime = "nodejs";
@@ -45,9 +46,7 @@ export async function GET(
     return NextResponse.json(
       {
         enabled: true,
-        error: bootstrap.message,
-        code: "CONTROLPLANE_RUNTIME_INIT_FAILED",
-        reason: "runtime_init_failed",
+        ...serializeRuntimeInitFailure(bootstrap.failure),
       },
       { status: 503 }
     );

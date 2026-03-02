@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { AgentState } from "@/features/agents/state/store";
 import type { PendingExecApproval } from "@/features/agents/approvals/types";
+import { createRuntimeWriteTransport } from "@/features/agents/operations/runtimeWriteTransport";
 import { GatewayResponseError } from "@/lib/gateway/errors";
 import { resolveExecApprovalViaStudio } from "@/features/agents/approvals/execApprovalResolveOperation";
 
@@ -62,7 +63,10 @@ describe("execApprovalResolveOperation", () => {
     const onAllowed = vi.fn();
 
     await resolveExecApprovalViaStudio({
-      client: { call },
+      runtimeWriteTransport: createRuntimeWriteTransport({
+        client: { call } as never,
+        useDomainIntents: false,
+      }),
       approvalId: "appr-1",
       decision: "allow-once",
       getAgents: () => [agent],
@@ -134,7 +138,10 @@ describe("execApprovalResolveOperation", () => {
     const onAllowed = vi.fn();
 
     await resolveExecApprovalViaStudio({
-      client: { call },
+      runtimeWriteTransport: createRuntimeWriteTransport({
+        client: { call } as never,
+        useDomainIntents: false,
+      }),
       approvalId: "appr-1",
       decision: "allow-once",
       getAgents: () => [agent],
@@ -194,7 +201,10 @@ describe("execApprovalResolveOperation", () => {
     const onAllowed = vi.fn();
 
     await resolveExecApprovalViaStudio({
-      client: { call },
+      runtimeWriteTransport: createRuntimeWriteTransport({
+        client: { call } as never,
+        useDomainIntents: false,
+      }),
       approvalId: "appr-1",
       decision: "deny",
       getAgents: () => [agent],
@@ -248,7 +258,10 @@ describe("execApprovalResolveOperation", () => {
     const unscopedApprovals = createState<PendingExecApproval[]>([]);
 
     await resolveExecApprovalViaStudio({
-      client: { call },
+      runtimeWriteTransport: createRuntimeWriteTransport({
+        client: { call } as never,
+        useDomainIntents: true,
+      }),
       approvalId: "appr-1",
       decision: "deny",
       getAgents: () => [],
@@ -261,7 +274,6 @@ describe("execApprovalResolveOperation", () => {
       setUnscopedPendingExecApprovals: unscopedApprovals.set,
       requestHistoryRefresh: vi.fn(),
       isDisconnectLikeError: () => false,
-      useDomainIntents: true,
     });
 
     expect(fetchMock).toHaveBeenCalledWith(

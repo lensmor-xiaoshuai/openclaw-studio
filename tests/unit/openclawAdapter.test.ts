@@ -78,8 +78,8 @@ describe("OpenClawGatewayAdapter", () => {
       "Control-plane gateway connection closed."
     );
     expect(Date.now() - startedAt).toBeLessThan(2_000);
-    expect(observedConnectClientId).toBe("gateway-client");
-    expect(observedConnectClientMode).toBe("backend");
+    expect(observedConnectClientId).toBe("openclaw-control-ui");
+    expect(observedConnectClientMode).toBe("webchat");
 
     await adapter.stop();
   });

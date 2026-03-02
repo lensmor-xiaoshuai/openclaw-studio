@@ -1,8 +1,8 @@
 import { parseAgentIdFromSessionKey } from "@/lib/gateway/GatewayClient";
 
-export type LatestUpdateKind = "heartbeat" | "cron" | null;
+type LatestUpdateKind = "heartbeat" | "cron" | null;
 
-export type LatestUpdateIntent =
+type LatestUpdateIntent =
   | { kind: "reset" }
   | {
       kind: "fetch-heartbeat";

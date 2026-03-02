@@ -299,6 +299,46 @@ describe("intent routes", () => {
     expect(body.reason).toBe("gateway_unavailable");
   });
 
+  it("chat-send returns native mismatch remediation when runtime init fails", async () => {
+    vi.doMock("@/lib/controlplane/runtime", () => ({
+      isStudioDomainApiModeEnabled: () => true,
+      getControlPlaneRuntime: () => {
+        const error = new Error(
+          "The module '/tmp/better_sqlite3.node' was compiled against a different Node.js version using NODE_MODULE_VERSION 141."
+        ) as Error & { code: string };
+        error.code = "ERR_DLOPEN_FAILED";
+        throw error;
+      },
+    }));
+    const mod = await import("@/app/api/intents/chat-send/route");
+
+    const response = await mod.POST(
+      new Request("http://localhost/api/intents/chat-send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sessionKey: "agent:agent-1:main",
+          message: "hello",
+          idempotencyKey: "run-1",
+          deliver: false,
+        }),
+      })
+    );
+
+    expect(response.status).toBe(503);
+    const body = await response.json() as {
+      code?: string;
+      reason?: string;
+      remediation?: { commands?: string[] };
+    };
+    expect(body.code).toBe("NATIVE_MODULE_MISMATCH");
+    expect(body.reason).toBe("native_module_mismatch");
+    expect(body.remediation?.commands).toEqual([
+      "npm rebuild better-sqlite3",
+      "npm install",
+    ]);
+  });
+
   it("chat-send returns 404 when domain mode is disabled", async () => {
     vi.doMock("@/lib/controlplane/runtime", () => ({
       isStudioDomainApiModeEnabled: () => false,

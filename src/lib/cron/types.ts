@@ -8,7 +8,7 @@ export type CronSchedule =
 export type CronSessionTarget = "main" | "isolated";
 export type CronWakeMode = "next-heartbeat" | "now";
 
-export type CronDeliveryMode = "none" | "announce";
+type CronDeliveryMode = "none" | "announce";
 export type CronDelivery = {
   mode: CronDeliveryMode;
   channel?: string;
@@ -57,7 +57,7 @@ export type CronJobSummary = {
   delivery?: CronDelivery;
 };
 
-export type CronJobsResult = {
+type CronJobsResult = {
   jobs: CronJobSummary[];
 };
 
@@ -130,7 +130,7 @@ export const formatCronJobDisplay = (job: CronJobSummary) => {
   return lines.join("\n");
 };
 
-export type CronListParams = {
+type CronListParams = {
   includeDisabled?: boolean;
 };
 
@@ -139,7 +139,7 @@ export type CronRunResult =
   | { ok: true; ran: false; reason: "not-due" }
   | { ok: false };
 
-export type CronRemoveResult = { ok: true; removed: boolean } | { ok: false; removed: false };
+type CronRemoveResult = { ok: true; removed: boolean } | { ok: false; removed: false };
 
 export type CronJobRestoreInput = {
   name: string;

@@ -15,7 +15,7 @@ export type ExecApprovalEventEffects = {
   markActivityAgentIds: string[];
 };
 
-export type ExecApprovalFollowUpIntent = {
+type ExecApprovalFollowUpIntent = {
   shouldSend: boolean;
   agentId: string | null;
   sessionKey: string | null;

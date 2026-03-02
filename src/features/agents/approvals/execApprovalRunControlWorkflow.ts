@@ -11,12 +11,12 @@ import type { AgentState } from "@/features/agents/state/store";
 
 type GatewayEventFrame = Parameters<typeof planIngressCommands>[0]["event"];
 
-export type PauseRunControlPlan = {
+type PauseRunControlPlan = {
   stalePausedAgentIds: string[];
   pauseIntent: ReturnType<typeof planPauseRunIntent>;
 };
 
-export type AutoResumeRunControlPlan = {
+type AutoResumeRunControlPlan = {
   preWaitIntent: ReturnType<typeof planAutoResumeIntent>;
   postWaitIntent: ReturnType<typeof planAutoResumeIntent>;
 };

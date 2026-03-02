@@ -49,13 +49,13 @@ export type SkillStatusReport = {
   skills: SkillStatusEntry[];
 };
 
-export type SkillInstallRequest = {
+type SkillInstallRequest = {
   name: string;
   installId: string;
   timeoutMs?: number;
 };
 
-export type SkillInstallResult = {
+type SkillInstallResult = {
   ok: boolean;
   message: string;
   stdout: string;
@@ -64,13 +64,13 @@ export type SkillInstallResult = {
   warnings?: string[];
 };
 
-export type SkillUpdateRequest = {
+type SkillUpdateRequest = {
   skillKey: string;
   enabled?: boolean;
   apiKey?: string;
 };
 
-export type SkillUpdateResult = {
+type SkillUpdateResult = {
   ok: boolean;
   skillKey: string;
   config: Record<string, unknown>;

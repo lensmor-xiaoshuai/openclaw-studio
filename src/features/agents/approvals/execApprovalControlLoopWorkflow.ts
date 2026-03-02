@@ -30,11 +30,11 @@ export type ExecApprovalIngressCommand =
   | { kind: "recordCronDedupeKey"; dedupeKey: string }
   | { kind: "appendCronTranscript"; intent: CronTranscriptIntent };
 
-export type PauseRunIntent =
+type PauseRunIntent =
   | { kind: "skip"; reason: string }
   | { kind: "pause"; agentId: string; sessionKey: string; runId: string };
 
-export type AutoResumeIntent =
+type AutoResumeIntent =
   | { kind: "skip"; reason: string }
   | { kind: "resume"; targetAgentId: string; pausedRunId: string; sessionKey: string };
 

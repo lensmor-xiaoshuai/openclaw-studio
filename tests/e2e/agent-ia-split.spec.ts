@@ -1,29 +1,10 @@
 import { expect, test } from "@playwright/test";
+import { stubStudioRoute } from "./helpers/studioRoute";
+import { stubRuntimeRoutes } from "./helpers/runtimeRoute";
 
 test.beforeEach(async ({ page }) => {
-  await page.route("**/api/studio", async (route, request) => {
-    if (request.method() === "PUT") {
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({
-          settings: { version: 1, gateway: null, focused: {}, avatars: {} },
-        }),
-      });
-      return;
-    }
-    if (request.method() !== "GET") {
-      await route.fallback();
-      return;
-    }
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-        settings: { version: 1, gateway: null, focused: {}, avatars: {} },
-      }),
-    });
-  });
+  await stubStudioRoute(page);
+  await stubRuntimeRoutes(page);
 });
 
 test("shows_connection_settings_control_in_header", async ({ page }) => {

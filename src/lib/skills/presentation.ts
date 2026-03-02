@@ -4,9 +4,9 @@ import type {
   SkillStatusEntry,
 } from "@/lib/skills/types";
 
-export type SkillSourceGroupId = "workspace" | "built-in" | "installed" | "extra" | "other";
+type SkillSourceGroupId = "workspace" | "built-in" | "installed" | "extra" | "other";
 
-export type SkillSourceGroup = {
+type SkillSourceGroup = {
   id: SkillSourceGroupId;
   label: string;
   skills: SkillStatusEntry[];
@@ -20,7 +20,7 @@ export type SkillReadinessState =
 
 export type AgentSkillDisplayState = "ready" | "setup-required" | "not-supported";
 
-export type AgentSkillsAccessMode = "all" | "none" | "selected";
+type AgentSkillsAccessMode = "all" | "none" | "selected";
 
 const GROUP_DEFINITIONS: Array<{ id: Exclude<SkillSourceGroupId, "other">; label: string }> = [
   { id: "workspace", label: "Workspace Skills" },

@@ -1,11 +1,11 @@
 import { GatewayResponseError, type GatewayClient } from "@/lib/gateway/GatewayClient";
 
-export type AgentHeartbeatActiveHours = {
+type AgentHeartbeatActiveHours = {
   start: string;
   end: string;
 };
 
-export type AgentHeartbeat = {
+type AgentHeartbeat = {
   every: string;
   target: string;
   includeReasoning: boolean;
@@ -13,17 +13,17 @@ export type AgentHeartbeat = {
   activeHours?: AgentHeartbeatActiveHours | null;
 };
 
-export type AgentHeartbeatResult = {
+type AgentHeartbeatResult = {
   heartbeat: AgentHeartbeat;
   hasOverride: boolean;
 };
 
-export type AgentHeartbeatUpdatePayload = {
+type AgentHeartbeatUpdatePayload = {
   override: boolean;
   heartbeat: AgentHeartbeat;
 };
 
-export type AgentHeartbeatSummary = {
+type AgentHeartbeatSummary = {
   id: string;
   agentId: string;
   source: "override" | "default";
@@ -31,13 +31,13 @@ export type AgentHeartbeatSummary = {
   heartbeat: AgentHeartbeat;
 };
 
-export type HeartbeatListResult = {
+type HeartbeatListResult = {
   heartbeats: AgentHeartbeatSummary[];
 };
 
-export type HeartbeatWakeResult = { ok: true } | { ok: false };
+type HeartbeatWakeResult = { ok: true } | { ok: false };
 
-export type GatewayConfigSnapshot = {
+type GatewayConfigSnapshot = {
   config?: Record<string, unknown>;
   hash?: string;
   exists?: boolean;
@@ -55,12 +55,12 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 
 export type ConfigAgentEntry = Record<string, unknown> & { id: string };
 
-export type GatewayAgentSandboxOverrides = {
+type GatewayAgentSandboxOverrides = {
   mode?: "off" | "non-main" | "all";
   workspaceAccess?: "none" | "ro" | "rw";
 };
 
-export type GatewayAgentToolsOverrides = {
+type GatewayAgentToolsOverrides = {
   profile?: "minimal" | "coding" | "messaging" | "full";
   allow?: string[];
   alsoAllow?: string[];
@@ -73,7 +73,7 @@ export type GatewayAgentToolsOverrides = {
   };
 };
 
-export type GatewayAgentOverrides = {
+type GatewayAgentOverrides = {
   sandbox?: GatewayAgentSandboxOverrides;
   tools?: GatewayAgentToolsOverrides;
 };
@@ -485,7 +485,7 @@ export const removeGatewayHeartbeatOverride = async (params: {
   return resolveHeartbeatSettings(nextConfig, params.agentId);
 };
 
-export type AgentSkillsAccessMode = "all" | "none" | "allowlist";
+type AgentSkillsAccessMode = "all" | "none" | "allowlist";
 
 const resolveRequiredAgentId = (agentId: string): string => {
   const trimmed = agentId.trim();

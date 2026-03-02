@@ -1,4 +1,5 @@
 import type { ControlPlaneOutboxEntry } from "@/lib/controlplane/contracts";
+import { serializeRuntimeInitFailure } from "@/lib/controlplane/runtime-init-errors";
 import { bootstrapDomainRuntime } from "@/lib/controlplane/runtime-route-bootstrap";
 
 export const runtime = "nodejs";
@@ -37,9 +38,7 @@ export async function GET(request: Request) {
     return new Response(
       JSON.stringify({
         enabled: true,
-        error: bootstrap.message,
-        code: "CONTROLPLANE_RUNTIME_INIT_FAILED",
-        reason: "runtime_init_failed",
+        ...serializeRuntimeInitFailure(bootstrap.failure),
       }),
       { status: 503, headers: { "content-type": "application/json; charset=utf-8" } }
     );

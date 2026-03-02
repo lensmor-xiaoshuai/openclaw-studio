@@ -15,11 +15,20 @@ const RUNTIME_DB_DIRNAME = "openclaw-studio";
 const RUNTIME_DB_FILENAME = "runtime.db";
 
 const DEFAULT_STATUS = "stopped" as const;
+const NO_AGENT_SENTINEL = "";
+const DEFAULT_BACKFILL_BATCH_LIMIT = 500;
+const AGENT_SESSION_KEY_RE = /^agent:([^:]+):(.+)$/i;
 
 type OutboxRow = {
   id: number;
   event_json: string;
   created_at: string;
+  agent_id: string | null;
+};
+
+type LegacyBackfillRow = {
+  id: number;
+  event_json: string;
 };
 
 type ProjectionRow = {
@@ -28,8 +37,41 @@ type ProjectionRow = {
   as_of: string | null;
 };
 
+type OutboxColumnInfo = {
+  name: string;
+};
+
 const parseDomainEvent = (raw: string): ControlPlaneDomainEvent => {
   return JSON.parse(raw) as ControlPlaneDomainEvent;
+};
+
+const isObject = (value: unknown): value is Record<string, unknown> =>
+  Boolean(value && typeof value === "object");
+
+const parseAgentIdFromSessionKey = (value: unknown): string | null => {
+  if (typeof value !== "string") return null;
+  const raw = value.trim();
+  if (!raw) return null;
+  const match = raw.match(AGENT_SESSION_KEY_RE);
+  if (!match) return null;
+  const agentId = match[1]?.trim().toLowerCase() ?? "";
+  const rest = match[2]?.trim() ?? "";
+  if (!agentId || !rest) return null;
+  return agentId;
+};
+
+const resolveAgentIdFromControlPlaneEvent = (event: ControlPlaneDomainEvent): string | null => {
+  if (event.type !== "gateway.event") return null;
+  const payload = event.payload;
+  if (!isObject(payload)) return null;
+  const directAgentId =
+    typeof payload.agentId === "string" ? payload.agentId.trim().toLowerCase() : "";
+  if (directAgentId) return directAgentId;
+  return (
+    parseAgentIdFromSessionKey(payload.sessionKey) ??
+    parseAgentIdFromSessionKey(payload.key) ??
+    parseAgentIdFromSessionKey(payload.runSessionKey)
+  );
 };
 
 const toOutboxEntry = (row: OutboxRow): ControlPlaneOutboxEntry => {
@@ -43,16 +85,26 @@ const toOutboxEntry = (row: OutboxRow): ControlPlaneOutboxEntry => {
 const resolveControlPlaneRuntimeDbPath = (): string =>
   path.join(resolveStateDir(), RUNTIME_DB_DIRNAME, RUNTIME_DB_FILENAME);
 
+export type BackfillAgentOutboxResult = {
+  scannedRows: number;
+  updatedRows: number;
+  exhausted: boolean;
+};
+
 export class SQLiteControlPlaneProjectionStore {
   private readonly db: Database.Database;
   private readonly readProjectionStmt: Database.Statement<[], ProjectionRow | undefined>;
   private readonly readOutboxHeadStmt: Database.Statement<[], { head: number }>;
   private readonly readOutboxAfterStmt: Database.Statement<[number, number], OutboxRow>;
+  private readonly readOutboxBeforeStmt: Database.Statement<[number, number], OutboxRow>;
+  private readonly readAgentOutboxBeforeStmt: Database.Statement<[string, number, number], OutboxRow>;
   private readonly readOutboxByIdStmt: Database.Statement<[number], OutboxRow | undefined>;
+  private readonly readBackfillCandidatesStmt: Database.Statement<[number, number], LegacyBackfillRow>;
   private readonly readProcessedStmt: Database.Statement<[string], { outbox_id: number | null } | undefined>;
   private readonly insertProcessedStmt: Database.Statement<[string, string]>;
-  private readonly insertOutboxStmt: Database.Statement<[string, string, string]>;
+  private readonly insertOutboxStmt: Database.Statement<[string, string, string, string]>;
   private readonly updateProcessedOutboxStmt: Database.Statement<[number, string]>;
+  private readonly updateOutboxAgentIdIfNullStmt: Database.Statement<[string, number]>;
   private readonly upsertStatusProjectionStmt: Database.Statement<
     [string, string | null, string, string]
   >;
@@ -61,6 +113,7 @@ export class SQLiteControlPlaneProjectionStore {
     event: ControlPlaneDomainEvent,
     eventKey: string
   ) => ControlPlaneOutboxEntry;
+  private readonly backfillOutboxAgentIdsTx: (rows: LegacyBackfillRow[]) => number;
 
   constructor(dbPath: string = resolveControlPlaneRuntimeDbPath()) {
     const dir = path.dirname(dbPath);
@@ -77,10 +130,19 @@ export class SQLiteControlPlaneProjectionStore {
     );
     this.readOutboxHeadStmt = this.db.prepare("SELECT COALESCE(MAX(id), 0) AS head FROM outbox");
     this.readOutboxAfterStmt = this.db.prepare(
-      "SELECT id, event_json, created_at FROM outbox WHERE id > ? ORDER BY id ASC LIMIT ?"
+      "SELECT id, event_json, created_at, agent_id FROM outbox WHERE id > ? ORDER BY id ASC LIMIT ?"
+    );
+    this.readOutboxBeforeStmt = this.db.prepare(
+      "SELECT id, event_json, created_at, agent_id FROM outbox WHERE id < ? ORDER BY id DESC LIMIT ?"
+    );
+    this.readAgentOutboxBeforeStmt = this.db.prepare(
+      "SELECT id, event_json, created_at, agent_id FROM outbox WHERE agent_id = ? AND id < ? ORDER BY id DESC LIMIT ?"
     );
     this.readOutboxByIdStmt = this.db.prepare(
-      "SELECT id, event_json, created_at FROM outbox WHERE id = ?"
+      "SELECT id, event_json, created_at, agent_id FROM outbox WHERE id = ?"
+    );
+    this.readBackfillCandidatesStmt = this.db.prepare(
+      "SELECT id, event_json FROM outbox WHERE agent_id IS NULL AND id < ? ORDER BY id DESC LIMIT ?"
     );
     this.readProcessedStmt = this.db.prepare(
       "SELECT outbox_id FROM processed_events WHERE event_key = ?"
@@ -89,10 +151,13 @@ export class SQLiteControlPlaneProjectionStore {
       "INSERT OR IGNORE INTO processed_events (event_key, created_at) VALUES (?, ?)"
     );
     this.insertOutboxStmt = this.db.prepare(
-      "INSERT INTO outbox (event_type, event_json, created_at) VALUES (?, ?, ?)"
+      "INSERT INTO outbox (event_type, event_json, created_at, agent_id) VALUES (?, ?, ?, ?)"
     );
     this.updateProcessedOutboxStmt = this.db.prepare(
       "UPDATE processed_events SET outbox_id = ? WHERE event_key = ?"
+    );
+    this.updateOutboxAgentIdIfNullStmt = this.db.prepare(
+      "UPDATE outbox SET agent_id = ? WHERE id = ? AND agent_id IS NULL"
     );
     this.upsertStatusProjectionStmt = this.db.prepare(`
       INSERT INTO runtime_projection (id, status, reason, as_of, updated_at)
@@ -113,10 +178,14 @@ export class SQLiteControlPlaneProjectionStore {
 
     this.applyEventTx = this.db.transaction((event: ControlPlaneDomainEvent, eventKey: string) => {
       const existing = this.readProcessedStmt.get(eventKey);
+      const nextAgentId = resolveAgentIdFromControlPlaneEvent(event) ?? NO_AGENT_SENTINEL;
       if (existing?.outbox_id) {
         const row = this.readOutboxByIdStmt.get(existing.outbox_id);
         if (!row) {
           throw new Error(`Outbox row missing for processed event key: ${eventKey}`);
+        }
+        if (row.agent_id == null) {
+          this.updateOutboxAgentIdIfNullStmt.run(nextAgentId, row.id);
         }
         return toOutboxEntry(row);
       }
@@ -130,7 +199,7 @@ export class SQLiteControlPlaneProjectionStore {
         this.upsertGatewayProjectionStmt.run(event.asOf, now);
       }
 
-      const info = this.insertOutboxStmt.run(event.type, JSON.stringify(event), now);
+      const info = this.insertOutboxStmt.run(event.type, JSON.stringify(event), now, nextAgentId);
       const outboxId = Number(info.lastInsertRowid);
       this.updateProcessedOutboxStmt.run(outboxId, eventKey);
 
@@ -139,6 +208,21 @@ export class SQLiteControlPlaneProjectionStore {
         throw new Error(`Failed to read inserted outbox row id=${outboxId}`);
       }
       return toOutboxEntry(row);
+    });
+
+    this.backfillOutboxAgentIdsTx = this.db.transaction((rows: LegacyBackfillRow[]) => {
+      let updatedRows = 0;
+      for (const row of rows) {
+        let nextAgentId = NO_AGENT_SENTINEL;
+        try {
+          nextAgentId = resolveAgentIdFromControlPlaneEvent(parseDomainEvent(row.event_json)) ?? NO_AGENT_SENTINEL;
+        } catch (error) {
+          console.error("Failed to parse outbox event while backfilling agent history index.", error);
+        }
+        const result = this.updateOutboxAgentIdIfNullStmt.run(nextAgentId, row.id);
+        updatedRows += Number(result.changes ?? 0);
+      }
+      return updatedRows;
     });
   }
 
@@ -153,6 +237,64 @@ export class SQLiteControlPlaneProjectionStore {
     const safeLastSeen = Number.isFinite(lastSeenId) && lastSeenId >= 0 ? lastSeenId : 0;
     const safeLimit = Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : 500;
     return this.readOutboxAfterStmt.all(safeLastSeen, safeLimit).map(toOutboxEntry);
+  }
+
+  readOutboxBefore(beforeOutboxId: number, limit: number = 500): ControlPlaneOutboxEntry[] {
+    const safeBeforeOutboxId =
+      Number.isFinite(beforeOutboxId) && beforeOutboxId > 0 ? Math.floor(beforeOutboxId) : 0;
+    if (safeBeforeOutboxId <= 0) return [];
+    const safeLimit = Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : 500;
+    return this.readOutboxBeforeStmt
+      .all(safeBeforeOutboxId, safeLimit)
+      .reverse()
+      .map(toOutboxEntry);
+  }
+
+  readAgentOutboxBefore(
+    agentId: string,
+    beforeOutboxId: number,
+    limit: number = 500
+  ): ControlPlaneOutboxEntry[] {
+    const normalizedAgentId = agentId.trim().toLowerCase();
+    if (!normalizedAgentId) return [];
+    const safeBeforeOutboxId =
+      Number.isFinite(beforeOutboxId) && beforeOutboxId > 0 ? Math.floor(beforeOutboxId) : 0;
+    if (safeBeforeOutboxId <= 0) return [];
+    const safeLimit = Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : 500;
+    return this.readAgentOutboxBeforeStmt
+      .all(normalizedAgentId, safeBeforeOutboxId, safeLimit)
+      .reverse()
+      .map(toOutboxEntry);
+  }
+
+  backfillAgentOutboxBefore(
+    beforeOutboxId: number,
+    limit: number = DEFAULT_BACKFILL_BATCH_LIMIT
+  ): BackfillAgentOutboxResult {
+    const safeBeforeOutboxId =
+      Number.isFinite(beforeOutboxId) && beforeOutboxId > 0 ? Math.floor(beforeOutboxId) : 0;
+    if (safeBeforeOutboxId <= 0) {
+      return {
+        scannedRows: 0,
+        updatedRows: 0,
+        exhausted: true,
+      };
+    }
+    const safeLimit = Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : DEFAULT_BACKFILL_BATCH_LIMIT;
+    const candidates = this.readBackfillCandidatesStmt.all(safeBeforeOutboxId, safeLimit);
+    if (candidates.length === 0) {
+      return {
+        scannedRows: 0,
+        updatedRows: 0,
+        exhausted: true,
+      };
+    }
+    const updatedRows = this.backfillOutboxAgentIdsTx(candidates);
+    return {
+      scannedRows: candidates.length,
+      updatedRows,
+      exhausted: candidates.length < safeLimit,
+    };
   }
 
   outboxHead(): number {
@@ -209,9 +351,18 @@ export class SQLiteControlPlaneProjectionStore {
 
       CREATE INDEX IF NOT EXISTS idx_outbox_id ON outbox(id);
     `);
+
+    const columns = this.db.prepare("PRAGMA table_info(outbox)").all() as OutboxColumnInfo[];
+    const hasAgentId = columns.some((column) => column.name === "agent_id");
+    if (!hasAgentId) {
+      this.db.exec("ALTER TABLE outbox ADD COLUMN agent_id TEXT");
+    }
+
+    this.db.exec("CREATE INDEX IF NOT EXISTS idx_outbox_agent_id_id ON outbox(agent_id, id DESC)");
+
     const version = Number(this.db.pragma("user_version", { simple: true }));
-    if (version < 1) {
-      this.db.pragma("user_version = 1");
+    if (version < 2) {
+      this.db.pragma("user_version = 2");
     }
   }
 }

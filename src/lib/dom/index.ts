@@ -1,4 +1,4 @@
-export type RafBatcher = {
+type RafBatcher = {
   schedule: () => void;
   cancel: () => void;
 };
@@ -21,7 +21,7 @@ export const createRafBatcher = (flush: () => void): RafBatcher => {
   };
 };
 
-export type ScrollMetrics = {
+type ScrollMetrics = {
   scrollTop: number;
   scrollHeight: number;
   clientHeight: number;

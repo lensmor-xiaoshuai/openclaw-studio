@@ -20,7 +20,7 @@ import {
 } from "@/features/agents/state/runtimeTerminalWorkflow";
 import { formatMetaMarkdown } from "@/lib/text/message-extract";
 
-export type RuntimeEventCoordinatorState = {
+type RuntimeEventCoordinatorState = {
   runtimeTerminalState: RuntimeTerminalState;
   chatRunSeen: Set<string>;
   assistantStreamByRun: Map<string, string>;

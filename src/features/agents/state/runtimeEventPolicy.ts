@@ -15,7 +15,7 @@ export type RuntimePolicyIntent =
   | { kind: "queueLatestUpdate"; agentId: string; message: string }
   | { kind: "scheduleSummaryRefresh"; delayMs: number; includeHeartbeatRefresh: boolean };
 
-export type RuntimeChatPolicyInput = {
+type RuntimeChatPolicyInput = {
   agentId: string;
   state: ChatEventPayload["state"];
   runId: string | null;
@@ -39,7 +39,7 @@ export type RuntimeChatPolicyInput = {
   latestUpdateMessage: string | null;
 };
 
-export type RuntimeAgentPolicyInput = {
+type RuntimeAgentPolicyInput = {
   runId: string;
   stream: string;
   phase: string;
@@ -48,7 +48,7 @@ export type RuntimeAgentPolicyInput = {
   isClosedRun: boolean;
 };
 
-export type RuntimeSummaryPolicyInput = {
+type RuntimeSummaryPolicyInput = {
   event: string;
   status: ConnectionStatus;
 };

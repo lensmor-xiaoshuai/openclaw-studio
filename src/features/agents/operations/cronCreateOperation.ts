@@ -25,7 +25,7 @@ const resolveCreateAgentId = (agentId: string) => {
 const resolveCreateErrorMessage = (error: unknown) =>
   error instanceof Error ? error.message : "Failed to create cron job.";
 
-export type CronBusyState = {
+type CronBusyState = {
   createBusy: boolean;
   runBusyJobId: string | null;
   deleteBusyJobId: string | null;

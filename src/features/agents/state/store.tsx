@@ -108,7 +108,7 @@ export const buildNewSessionAgentPatch = (agent: AgentState): Partial<AgentState
   };
 };
 
-export type AgentStoreState = {
+type AgentStoreState = {
   agents: AgentState[];
   selectedAgentId: string | null;
   loading: boolean;

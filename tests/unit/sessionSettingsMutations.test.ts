@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { applySessionSettingMutation } from "@/features/agents/state/sessionSettingsMutations";
+import { createRuntimeWriteTransport } from "@/features/agents/operations/runtimeWriteTransport";
 import type { GatewayClient } from "@/lib/gateway/GatewayClient";
 import { GatewayResponseError } from "@/lib/gateway/errors";
 
@@ -187,5 +188,40 @@ describe("session settings mutations helper", () => {
           action.line.startsWith("Model update failed:")
       );
     expect(failureLines).toHaveLength(0);
+  });
+
+  it("routes session mutation through intent transport in domain mode", async () => {
+    const dispatch = vi.fn();
+    const call = vi.fn(async () => {
+      throw new Error("gateway client should not be used");
+    });
+    const fetchMock = vi.fn(async () =>
+      new Response(JSON.stringify({ ok: true, payload: { ok: true } }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      })
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await applySessionSettingMutation({
+      agents: [{ agentId: "agent-1", sessionCreated: true }],
+      dispatch,
+      client: { call } as unknown as GatewayClient,
+      runtimeWriteTransport: createRuntimeWriteTransport({
+        client: { call } as never,
+        useDomainIntents: true,
+      }),
+      agentId: "agent-1",
+      sessionKey: "agent:1:studio:abc",
+      field: "model",
+      value: "openai/gpt-5",
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/intents/session-settings-sync",
+      expect.objectContaining({ method: "POST" })
+    );
+    expect(call).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
   });
 });

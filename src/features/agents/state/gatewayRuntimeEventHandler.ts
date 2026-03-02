@@ -34,7 +34,7 @@ import {
 import { planRuntimeChatEvent } from "@/features/agents/state/runtimeChatEventWorkflow";
 import { planRuntimeAgentEvent } from "@/features/agents/state/runtimeAgentEventWorkflow";
 
-export type GatewayRuntimeEventHandlerDeps = {
+type GatewayRuntimeEventHandlerDeps = {
   getStatus: () => "disconnected" | "connecting" | "connected";
   getAgents: () => AgentState[];
   dispatch: (action: RuntimeCoordinatorDispatchAction) => void;
@@ -65,7 +65,7 @@ export type GatewayRuntimeEventHandlerDeps = {
   updateSpecialLatestUpdate: (agentId: string, agent: AgentState, message: string) => void;
 };
 
-export type GatewayRuntimeEventHandler = {
+type GatewayRuntimeEventHandler = {
   handleEvent: (event: EventFrame) => void;
   clearRunTracking: (runId?: string | null) => void;
   dispose: () => void;

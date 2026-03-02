@@ -17,12 +17,12 @@ export type ApprovalPendingState = {
   unscopedApprovals: PendingExecApproval[];
 };
 
-export type ApprovalPauseRequest = {
+type ApprovalPauseRequest = {
   approval: PendingExecApproval;
   preferredAgentId: string | null;
 };
 
-export type ApprovalIngressResult = {
+type ApprovalIngressResult = {
   pendingState: ApprovalPendingState;
   pauseRequests: ApprovalPauseRequest[];
   markActivityAgentIds: string[];
@@ -33,11 +33,11 @@ export type AwaitingUserInputPatch = {
   awaitingUserInput: boolean;
 };
 
-export type AutoResumePreflightIntent =
+type AutoResumePreflightIntent =
   | { kind: "skip"; reason: "missing-paused-run" | "blocking-pending-approvals" }
   | { kind: "resume"; targetAgentId: string; pausedRunId: string };
 
-export type AutoResumeDispatchIntent =
+type AutoResumeDispatchIntent =
   | { kind: "skip"; reason: "missing-paused-run" | "missing-agent" | "run-replaced" | "missing-session-key" }
   | { kind: "resume"; targetAgentId: string; pausedRunId: string; sessionKey: string };
 

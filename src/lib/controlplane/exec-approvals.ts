@@ -1,8 +1,8 @@
 import type { ControlPlaneRuntime } from "@/lib/controlplane/runtime";
 import { ControlPlaneGatewayError } from "@/lib/controlplane/openclaw-adapter";
 
-export type GatewayExecApprovalSecurity = "deny" | "allowlist" | "full";
-export type GatewayExecApprovalAsk = "off" | "on-miss" | "always";
+type GatewayExecApprovalSecurity = "deny" | "allowlist" | "full";
+type GatewayExecApprovalAsk = "off" | "on-miss" | "always";
 export type ExecutionRoleId = "conservative" | "collaborative" | "autonomous";
 
 type ExecAllowlistEntry = {
@@ -66,30 +66,30 @@ const resolvePolicyForRole = (params: {
 const isRetryableSetError = (err: unknown): boolean => {
   if (!(err instanceof ControlPlaneGatewayError)) return false;
   const message = err.message.toLowerCase();
+  if (err.code.trim().toUpperCase() !== "INVALID_REQUEST") return false;
+  if (!message.includes("exec approvals")) return false;
   return (
-    err.code.trim().toUpperCase() === "INVALID_REQUEST" &&
-    (message.includes("re-run exec.approvals.get") || message.includes("changed since last load"))
+    message.includes("re-run exec.approvals.get") ||
+    message.includes("reload and retry") ||
+    message.includes("base hash unavailable") ||
+    message.includes("base hash required") ||
+    message.includes("changed since last load") ||
+    message.includes("exec approvals changed")
   );
 };
 
-export const upsertAgentExecApprovalsPolicyViaRuntime = async (params: {
-  runtime: ControlPlaneRuntime;
-  agentId: string;
-  role: ExecutionRoleId;
-}): Promise<void> => {
-  const agentId = params.agentId.trim();
-  if (!agentId) {
-    throw new Error("Agent id is required.");
-  }
-
-  const snapshot = await params.runtime.callGateway<ExecApprovalsSnapshot>("exec.approvals.get", {});
+const buildNextExecApprovalsFile = (
+  snapshotFile: ExecApprovalsFile | undefined,
+  agentId: string,
+  role: ExecutionRoleId
+): ExecApprovalsFile => {
   const baseFile: ExecApprovalsFile =
-    snapshot.file && typeof snapshot.file === "object"
+    snapshotFile && typeof snapshotFile === "object"
       ? {
           version: 1,
-          socket: snapshot.file.socket,
-          defaults: snapshot.file.defaults,
-          agents: { ...(snapshot.file.agents ?? {}) },
+          socket: snapshotFile.socket,
+          defaults: snapshotFile.defaults,
+          agents: { ...(snapshotFile.agents ?? {}) },
         }
       : { version: 1, agents: {} };
 
@@ -100,7 +100,7 @@ export const upsertAgentExecApprovalsPolicyViaRuntime = async (params: {
       ) ?? []
     : [];
   const policy = resolvePolicyForRole({
-    role: params.role,
+    role,
     allowlist: existingAllowlist.map((entry) => ({ pattern: entry.pattern })),
   });
 
@@ -117,11 +117,25 @@ export const upsertAgentExecApprovalsPolicyViaRuntime = async (params: {
     };
   }
 
-  const nextFile: ExecApprovalsFile = {
+  return {
     ...baseFile,
     version: 1,
     agents: nextAgents,
   };
+};
+
+export const upsertAgentExecApprovalsPolicyViaRuntime = async (params: {
+  runtime: ControlPlaneRuntime;
+  agentId: string;
+  role: ExecutionRoleId;
+}): Promise<void> => {
+  const agentId = params.agentId.trim();
+  if (!agentId) {
+    throw new Error("Agent id is required.");
+  }
+
+  const snapshot = await params.runtime.callGateway<ExecApprovalsSnapshot>("exec.approvals.get", {});
+  const nextFile = buildNextExecApprovalsFile(snapshot.file, agentId, params.role);
 
   const setPayload = { file: nextFile, ...(snapshot.exists ? { baseHash: snapshot.hash } : {}) };
   try {
@@ -129,8 +143,9 @@ export const upsertAgentExecApprovalsPolicyViaRuntime = async (params: {
   } catch (err) {
     if (!isRetryableSetError(err)) throw err;
     const retrySnapshot = await params.runtime.callGateway<ExecApprovalsSnapshot>("exec.approvals.get", {});
+    const retryNextFile = buildNextExecApprovalsFile(retrySnapshot.file, agentId, params.role);
     await params.runtime.callGateway("exec.approvals.set", {
-      file: nextFile,
+      file: retryNextFile,
       ...(retrySnapshot.exists ? { baseHash: retrySnapshot.hash } : {}),
     });
   }

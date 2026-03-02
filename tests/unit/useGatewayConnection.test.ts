@@ -15,10 +15,18 @@ const setupAndImportHook = async (gatewayUrl: string | null) => {
   vi.resetModules();
   vi.spyOn(console, "info").mockImplementation(() => {});
 
-  const captured: { url: string | null; token: unknown; authScopeKey: unknown } = {
+  const captured: {
+    url: string | null;
+    token: unknown;
+    authScopeKey: unknown;
+    startCount: number;
+    stopCount: number;
+  } = {
     url: null,
     token: null,
     authScopeKey: null,
+    startCount: 0,
+    stopCount: 0,
   };
 
   vi.doMock("../../src/lib/gateway/openclaw/GatewayBrowserClient", () => {
@@ -44,11 +52,13 @@ const setupAndImportHook = async (gatewayUrl: string | null) => {
       }
 
       start() {
+        captured.startCount += 1;
         this.connected = true;
         this.opts.onHello?.({ type: "hello-ok", protocol: 1 });
       }
 
       stop() {
+        captured.stopCount += 1;
         this.connected = false;
         this.opts.onClose?.({ code: 1000, reason: "stopped" });
       }
@@ -224,6 +234,100 @@ describe("useGatewayConnection", () => {
       expect(screen.getByTestId("gatewayUrl")).toHaveTextContent("ws://localhost:18789");
     });
     expect(screen.getByTestId("token")).toHaveTextContent("");
+  });
+
+  it("does_not_auto_connect_when_domain_mode_is_enabled", async () => {
+    const { useGatewayConnection, captured } = await setupAndImportHook(null);
+    const coordinator = {
+      loadSettings: async () => null,
+      loadSettingsEnvelope: async () => ({
+        settings: {
+          version: 1,
+          gateway: { url: "wss://remote.example", token: "" },
+          focused: {},
+          avatars: {},
+        },
+        localGatewayDefaults: null,
+        domainApiModeEnabled: true,
+      }),
+      schedulePatch: () => {},
+      flushPending: async () => {},
+    };
+
+    const Probe = () => {
+      const state = useGatewayConnection(coordinator);
+      return createElement(
+        "div",
+        { "data-testid": "domainApiModeEnabled" },
+        state.domainApiModeEnabled === null ? "null" : String(state.domainApiModeEnabled)
+      );
+    };
+
+    render(createElement(Probe));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("domainApiModeEnabled")).toHaveTextContent("true");
+    });
+    expect(captured.url).toBeNull();
+    expect(captured.startCount).toBe(0);
+    expect(captured.stopCount).toBe(0);
+  });
+
+  it("disconnects legacy websocket when domain mode flips to enabled", async () => {
+    const { useGatewayConnection, captured } = await setupAndImportHook(null);
+    const legacyCoordinator = {
+      loadSettings: async () => null,
+      loadSettingsEnvelope: async () => ({
+        settings: {
+          version: 1,
+          gateway: { url: "wss://legacy.example", token: "" },
+          focused: {},
+          avatars: {},
+        },
+        localGatewayDefaults: null,
+        domainApiModeEnabled: false,
+      }),
+      schedulePatch: () => {},
+      flushPending: async () => {},
+    };
+    const domainCoordinator = {
+      ...legacyCoordinator,
+      loadSettingsEnvelope: async () => ({
+        settings: {
+          version: 1,
+          gateway: { url: "wss://legacy.example", token: "" },
+          focused: {},
+          avatars: {},
+        },
+        localGatewayDefaults: null,
+        domainApiModeEnabled: true,
+      }),
+    };
+
+    const Probe = ({ coordinator }: { coordinator: typeof legacyCoordinator }) => {
+      const state = useGatewayConnection(coordinator);
+      return createElement(
+        "div",
+        { "data-testid": "domainApiModeEnabled" },
+        state.domainApiModeEnabled === null ? "null" : String(state.domainApiModeEnabled)
+      );
+    };
+
+    const view = render(createElement(Probe, { coordinator: legacyCoordinator }));
+
+    await waitFor(() => {
+      expect(captured.startCount).toBe(1);
+    });
+    expect(captured.stopCount).toBe(0);
+
+    view.rerender(createElement(Probe, { coordinator: domainCoordinator }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("domainApiModeEnabled")).toHaveTextContent("true");
+    });
+    await waitFor(() => {
+      expect(captured.stopCount).toBeGreaterThanOrEqual(1);
+    });
   });
 
   it("persists gateway url changes without sending token", async () => {
