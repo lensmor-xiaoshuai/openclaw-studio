@@ -81,6 +81,7 @@ export const resolveHistoryResponseDisposition = (params: {
   expectedSessionKey: string;
   requestEpoch: number;
   requestRevision: number;
+  allowTranscriptRevisionSkew?: boolean;
 }): HistoryResponseDisposition => {
   const latest = params.latestAgent;
   if (!latest || latest.sessionKey.trim() !== params.expectedSessionKey) {
@@ -88,6 +89,9 @@ export const resolveHistoryResponseDisposition = (params: {
   }
   if ((latest.sessionEpoch ?? 0) !== params.requestEpoch) {
     return { kind: "drop", reason: "session-epoch-changed" };
+  }
+  if (params.allowTranscriptRevisionSkew) {
+    return { kind: "apply" };
   }
   const latestRevision = latest.transcriptRevision ?? latest.outputLines.length;
   if (latestRevision !== params.requestRevision) {

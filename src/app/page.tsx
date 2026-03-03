@@ -895,7 +895,6 @@ const AgentStudioPage = () => {
     },
     isDisconnectLikeError: isGatewayDisconnectLikeError,
     useDomainApiReads: useDomainApiMode,
-    ingestDomainOutboxEntries,
   });
 
   const {
@@ -1316,7 +1315,15 @@ const AgentStudioPage = () => {
       queueLivePatch,
       clearPendingLivePatch,
       loadSummarySnapshot,
-      requestHistoryRefresh: ({ agentId }) => loadAgentHistory(agentId),
+      requestHistoryRefresh: ({ agentId }) => {
+        if (useDomainApiMode) {
+          const normalizedFocusedAgentId = stateRef.current.selectedAgentId?.trim() ?? "";
+          if (!normalizedFocusedAgentId || normalizedFocusedAgentId !== agentId.trim()) {
+            return;
+          }
+        }
+        void loadAgentHistory(agentId);
+      },
       refreshHeartbeatLatestUpdate,
       bumpHeartbeatTick: () => setHeartbeatTick((prev) => prev + 1),
       setTimeout: (fn, delayMs) => window.setTimeout(fn, delayMs),
@@ -1353,6 +1360,7 @@ const AgentStudioPage = () => {
     refreshHeartbeatLatestUpdate,
     specialLatestUpdate,
     ingestDomainOutboxEntries,
+    useDomainApiMode,
     coreStatus,
   ]);
 

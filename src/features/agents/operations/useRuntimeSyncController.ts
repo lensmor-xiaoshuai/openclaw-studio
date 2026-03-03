@@ -53,134 +53,48 @@ type UseRuntimeSyncControllerParams = {
   clearRunTracking: (runId: string) => void;
   isDisconnectLikeError: (error: unknown) => boolean;
   useDomainApiReads: boolean;
-  ingestDomainOutboxEntries: (entries: ControlPlaneOutboxEntry[]) => void;
   defaultHistoryLimit?: number;
   maxHistoryLimit?: number;
 };
 
 type RuntimeSyncController = {
   loadSummarySnapshot: () => Promise<void>;
-  loadAgentHistory: (
-    agentId: string,
-    options?: { limit?: number; beforeOutboxId?: number }
-  ) => Promise<void>;
+  loadAgentHistory: (agentId: string, options?: { limit?: number }) => Promise<void>;
   loadMoreAgentHistory: (agentId: string) => void;
   reconcileRunningAgents: () => Promise<void>;
   clearHistoryInFlight: (sessionKey: string) => void;
 };
 
 type DomainAgentHistoryResponse = {
-  view?: unknown;
   entries?: unknown[];
   hasMore?: unknown;
-  nextBeforeOutboxId?: unknown;
   semanticTurnsIncluded?: unknown;
   windowTruncated?: unknown;
   activeRun?: unknown;
 };
 
-type DomainHistoryView = "raw" | "semantic";
-
 const DOMAIN_SEMANTIC_TURN_LIMIT = 50;
 const DOMAIN_SEMANTIC_SCAN_LIMIT = 800;
-const MAX_DOMAIN_HISTORY_DEDUPE_KEYS = 20_000;
-const MAX_DOMAIN_ACTIVE_RUN_BACKGROUND_PAGES = 6;
+const DOMAIN_CHAT_HISTORY_MAX_LIMIT = 1000;
 
-const resolveDomainOutboxDedupeKey = (entry: ControlPlaneOutboxEntry): string | null => {
-  const entryId = typeof entry?.id === "number" && Number.isFinite(entry.id) ? entry.id : null;
-  if (entryId === null) return null;
-  const createdAt = typeof entry.createdAt === "string" ? entry.createdAt.trim() : "";
-  return `${entryId}:${createdAt}`;
+type DomainChatHistoryEnvelope = {
+  ok?: unknown;
+  payload?: {
+    sessionKey?: unknown;
+    messages?: unknown;
+  } | null;
+  error?: unknown;
+};
+
+type DomainChatHistoryPayload = {
+  sessionKey: string;
+  messages: Record<string, unknown>[];
 };
 
 const asRecord = (value: unknown): Record<string, unknown> | null =>
   value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : null;
-
-type DomainGatewayEvent = {
-  name: string;
-  payload: Record<string, unknown> | null;
-};
-
-const resolveDomainGatewayEvent = (
-  entry: ControlPlaneOutboxEntry
-): DomainGatewayEvent | null => {
-  if (entry.event.type !== "gateway.event") return null;
-  if (typeof entry.event.event !== "string") return null;
-  return {
-    name: entry.event.event.trim().toLowerCase(),
-    payload: asRecord(entry.event.payload),
-  };
-};
-
-const resolveRunIdFromDomainEntry = (entry: ControlPlaneOutboxEntry): string | null => {
-  const gatewayEvent = resolveDomainGatewayEvent(entry);
-  if (!gatewayEvent?.payload) return null;
-  const runId = gatewayEvent.payload.runId;
-  if (typeof runId !== "string") return null;
-  const normalized = runId.trim();
-  return normalized || null;
-};
-
-const resolveDomainChatRole = (payload: Record<string, unknown>): string | null => {
-  const message = asRecord(payload.message);
-  const role = message?.role ?? payload.role;
-  if (typeof role !== "string") return null;
-  const normalized = role.trim().toLowerCase();
-  return normalized || null;
-};
-
-const isTerminalDomainEntryForRun = (
-  entry: ControlPlaneOutboxEntry,
-  runId: string
-): boolean => {
-  const gatewayEvent = resolveDomainGatewayEvent(entry);
-  if (!gatewayEvent?.payload) return false;
-  const entryRunId = resolveRunIdFromDomainEntry(entry);
-  if (!entryRunId || entryRunId !== runId) return false;
-
-  if (gatewayEvent.name === "chat") {
-    const state = gatewayEvent.payload.state;
-    if (typeof state === "string") {
-      const normalized = state.trim().toLowerCase();
-      const role = resolveDomainChatRole(gatewayEvent.payload);
-      if (role === "user") {
-        return false;
-      }
-      return normalized === "final" || normalized === "aborted" || normalized === "error";
-    }
-    return false;
-  }
-
-  if (gatewayEvent.name !== "agent") return false;
-  const stream = gatewayEvent.payload.stream;
-  if (typeof stream !== "string" || stream.trim().toLowerCase() !== "lifecycle") {
-    return false;
-  }
-  const data = asRecord(gatewayEvent.payload.data);
-  const phase = data?.phase;
-  if (typeof phase !== "string") return false;
-  const normalizedPhase = phase.trim().toLowerCase();
-  return normalizedPhase === "end" || normalizedPhase === "error";
-};
-
-const isLifecycleStartDomainEntryForRun = (
-  entry: ControlPlaneOutboxEntry,
-  runId: string
-): boolean => {
-  const gatewayEvent = resolveDomainGatewayEvent(entry);
-  if (!gatewayEvent?.payload || gatewayEvent.name !== "agent") return false;
-  const entryRunId = resolveRunIdFromDomainEntry(entry);
-  if (!entryRunId || entryRunId !== runId) return false;
-  const stream = gatewayEvent.payload.stream;
-  if (typeof stream !== "string" || stream.trim().toLowerCase() !== "lifecycle") {
-    return false;
-  }
-  const data = asRecord(gatewayEvent.payload.data);
-  const phase = data?.phase;
-  return typeof phase === "string" && phase.trim().toLowerCase() === "start";
-};
 
 const resolveDomainHistoryActiveRun = (value: unknown): DomainHistoryActiveRun | null => {
   const record = asRecord(value);
@@ -211,18 +125,49 @@ export function useRuntimeSyncController(
     clearRunTracking,
     isDisconnectLikeError,
     useDomainApiReads,
-    ingestDomainOutboxEntries,
   } = params;
   const agentsRef = useRef(agents);
   const historyInFlightRef = useRef<Set<string>>(new Set());
   const reconcileRunInFlightRef = useRef<Set<string>>(new Set());
-  const domainHistoryCursorByAgentRef = useRef<Map<string, number | null>>(new Map());
-  const activeRunBackfillInFlightByAgentRef = useRef<Set<string>>(new Set());
-  const seenDomainOutboxKeysRef = useRef<Set<string>>(new Set());
-  const seenDomainOutboxKeyOrderRef = useRef<string[]>([]);
 
   const defaultHistoryLimit = params.defaultHistoryLimit ?? RUNTIME_SYNC_DEFAULT_HISTORY_LIMIT;
   const maxHistoryLimit = params.maxHistoryLimit ?? RUNTIME_SYNC_MAX_HISTORY_LIMIT;
+
+  const loadDomainChatHistory = useCallback(
+    async (params: { sessionKey: string; limit?: number }): Promise<DomainChatHistoryPayload> => {
+      const query = new URLSearchParams({ sessionKey: params.sessionKey.trim() });
+      if (typeof params.limit === "number" && Number.isFinite(params.limit) && params.limit > 0) {
+        const bounded = Math.min(Math.floor(params.limit), DOMAIN_CHAT_HISTORY_MAX_LIMIT);
+        query.set("limit", String(bounded));
+      }
+      const response = await fetchJson<DomainChatHistoryEnvelope>(
+        `/api/runtime/chat-history?${query.toString()}`,
+        { cache: "no-store" }
+      );
+      if (response?.ok !== true) {
+        const message =
+          typeof response?.error === "string" ? response.error.trim() : "Domain chat history read failed.";
+        throw new Error(message || "Domain chat history read failed.");
+      }
+      const payload =
+        response.payload && typeof response.payload === "object"
+          ? response.payload
+          : {};
+      const messages = Array.isArray(payload.messages)
+        ? payload.messages.filter(
+            (entry): entry is Record<string, unknown> => Boolean(entry && typeof entry === "object")
+          )
+        : [];
+      return {
+        sessionKey:
+          typeof payload.sessionKey === "string" && payload.sessionKey.trim()
+            ? payload.sessionKey.trim()
+            : params.sessionKey.trim(),
+        messages,
+      };
+    },
+    []
+  );
 
   useEffect(() => {
     agentsRef.current = agents;
@@ -260,7 +205,7 @@ export function useRuntimeSyncController(
         client.call<SummaryPreviewSnapshot>("sessions.preview", {
           keys: summaryIntent.keys,
           limit: summaryIntent.limit,
-      maxChars: summaryIntent.maxChars,
+          maxChars: summaryIntent.maxChars,
         }),
       ]);
       for (const entry of buildSummarySnapshotPatches({
@@ -281,64 +226,26 @@ export function useRuntimeSyncController(
     }
   }, [client, dispatch, isDisconnectLikeError, useDomainApiReads]);
 
-  const ingestUnseenDomainEntries = useCallback(
-    (entries: ControlPlaneOutboxEntry[]) => {
-      const unseen: ControlPlaneOutboxEntry[] = [];
-      for (const entry of entries) {
-        const dedupeKey = resolveDomainOutboxDedupeKey(entry);
-        if (!dedupeKey) continue;
-        if (seenDomainOutboxKeysRef.current.has(dedupeKey)) continue;
-        seenDomainOutboxKeysRef.current.add(dedupeKey);
-        seenDomainOutboxKeyOrderRef.current.push(dedupeKey);
-        unseen.push(entry);
-      }
-      if (seenDomainOutboxKeyOrderRef.current.length > MAX_DOMAIN_HISTORY_DEDUPE_KEYS) {
-        const overflow =
-          seenDomainOutboxKeyOrderRef.current.length - MAX_DOMAIN_HISTORY_DEDUPE_KEYS;
-        const dropped = seenDomainOutboxKeyOrderRef.current.splice(0, overflow);
-        for (const key of dropped) {
-          seenDomainOutboxKeysRef.current.delete(key);
-        }
-      }
-      if (unseen.length > 0) {
-        ingestDomainOutboxEntries(unseen);
-      }
-    },
-    [ingestDomainOutboxEntries]
-  );
-
   const loadAgentHistoryViaDomainApi = useCallback(
-    async (agentId: string, limit: number, beforeOutboxId?: number) => {
+    async (agentId: string, limit: number) => {
       const normalizedAgentId = agentId.trim();
       const encodedAgentId = encodeURIComponent(normalizedAgentId);
       if (!encodedAgentId) return;
+      const boundedLimit = Math.min(Math.max(1, Math.floor(limit)), DOMAIN_CHAT_HISTORY_MAX_LIMIT);
       const fetchPage = async (params: {
-        cursor?: number;
-        view: DomainHistoryView;
         turnLimit?: number;
         scanLimit?: number;
       }): Promise<{
         entries: ControlPlaneOutboxEntry[];
-        hasMore: boolean;
-        nextBeforeOutboxId: number | null;
         semanticTurnsIncluded: number | null;
         windowTruncated: boolean;
         activeRun: DomainHistoryActiveRun | null;
       }> => {
         const query = new URLSearchParams();
-        query.set("limit", String(limit));
-        query.set("view", params.view);
-        if (params.view === "semantic") {
-          query.set("turnLimit", String(params.turnLimit ?? DOMAIN_SEMANTIC_TURN_LIMIT));
-          query.set("scanLimit", String(params.scanLimit ?? DOMAIN_SEMANTIC_SCAN_LIMIT));
-        }
-        if (
-          typeof params.cursor === "number" &&
-          Number.isFinite(params.cursor) &&
-          params.cursor > 0
-        ) {
-          query.set("beforeOutboxId", String(Math.floor(params.cursor)));
-        }
+        query.set("limit", String(boundedLimit));
+        query.set("view", "semantic");
+        query.set("turnLimit", String(params.turnLimit ?? DOMAIN_SEMANTIC_TURN_LIMIT));
+        query.set("scanLimit", String(params.scanLimit ?? DOMAIN_SEMANTIC_SCAN_LIMIT));
         const result = await fetchJson<DomainAgentHistoryResponse>(
           `/api/runtime/agents/${encodedAgentId}/history?${query.toString()}`,
           { cache: "no-store" }
@@ -346,13 +253,6 @@ export function useRuntimeSyncController(
         const entries = Array.isArray(result.entries)
           ? (result.entries as ControlPlaneOutboxEntry[])
           : [];
-        const hasMore = result.hasMore === true;
-        const nextBeforeOutboxId =
-          typeof result.nextBeforeOutboxId === "number" &&
-          Number.isFinite(result.nextBeforeOutboxId) &&
-          result.nextBeforeOutboxId > 0
-            ? Math.floor(result.nextBeforeOutboxId)
-            : null;
         const semanticTurnsIncluded =
           typeof result.semanticTurnsIncluded === "number" &&
           Number.isFinite(result.semanticTurnsIncluded) &&
@@ -364,48 +264,74 @@ export function useRuntimeSyncController(
         const activeRun = resolveDomainHistoryActiveRun(result.activeRun);
         return {
           entries,
-          hasMore,
-          nextBeforeOutboxId,
           semanticTurnsIncluded,
           windowTruncated,
           activeRun,
         };
       };
 
-      const explicitBeforeOutboxId =
-        typeof beforeOutboxId === "number" &&
-        Number.isFinite(beforeOutboxId) &&
-        beforeOutboxId > 0
-          ? Math.floor(beforeOutboxId)
-          : undefined;
-      const shouldUseSemanticWindow =
-        explicitBeforeOutboxId === undefined;
+      const loadedAt = Date.now();
       const firstPage = await fetchPage({
-        cursor: explicitBeforeOutboxId,
-        view: shouldUseSemanticWindow ? "semantic" : "raw",
         turnLimit: DOMAIN_SEMANTIC_TURN_LIMIT,
         scanLimit: DOMAIN_SEMANTIC_SCAN_LIMIT,
       });
-
-      ingestUnseenDomainEntries(firstPage.entries);
-      if (normalizedAgentId) {
-        domainHistoryCursorByAgentRef.current.set(
-          normalizedAgentId,
-          firstPage.nextBeforeOutboxId
-        );
-      }
-      if (shouldUseSemanticWindow) {
-        logTranscriptDebugMetric("domain_history_semantic_window", {
-          agentId: normalizedAgentId,
-          turns: firstPage.semanticTurnsIncluded,
-          entries: firstPage.entries.length,
-          truncated: firstPage.windowTruncated,
-        });
-      }
+      logTranscriptDebugMetric("domain_history_semantic_window", {
+        agentId: normalizedAgentId,
+        turns: firstPage.semanticTurnsIncluded,
+        entries: firstPage.entries.length,
+        truncated: firstPage.windowTruncated,
+      });
       const latestAgent =
         agentsRef.current.find((entry) => entry.agentId === normalizedAgentId) ?? null;
+      if (
+        latestAgent?.sessionCreated &&
+        typeof latestAgent.sessionKey === "string" &&
+        latestAgent.sessionKey.trim()
+      ) {
+        const commands = await runHistorySyncOperation({
+          client: {
+            call: async <T = unknown>(method: string, request: unknown) => {
+              if (method !== "chat.history") {
+                throw new Error(`Unsupported domain history method: ${method}`);
+              }
+              const body =
+                request && typeof request === "object"
+                  ? (request as { sessionKey?: unknown; limit?: unknown })
+                  : {};
+              const sessionKey =
+                typeof body.sessionKey === "string" ? body.sessionKey.trim() : latestAgent.sessionKey.trim();
+              const requestedLimit =
+                typeof body.limit === "number" && Number.isFinite(body.limit) && body.limit > 0
+                  ? Math.floor(body.limit)
+                  : undefined;
+              return (await loadDomainChatHistory({
+                sessionKey,
+                limit: requestedLimit,
+              })) as T;
+            },
+          },
+          agentId: normalizedAgentId,
+          requestedLimit: boundedLimit,
+          getAgent: (targetAgentId) =>
+            agentsRef.current.find((entry) => entry.agentId === targetAgentId) ?? null,
+          inFlightSessionKeys: historyInFlightRef.current,
+          requestId: randomUUID(),
+          loadedAt,
+          defaultLimit: defaultHistoryLimit,
+          maxLimit: maxHistoryLimit,
+          transcriptV2Enabled: TRANSCRIPT_V2_ENABLED,
+          allowTranscriptRevisionSkew: true,
+        });
+        executeHistorySyncCommands({
+          commands,
+          dispatch,
+          logMetric: (metric, meta) => logTranscriptDebugMetric(metric, meta),
+          isDisconnectLikeError,
+          logError: (message, error) => console.error(message, error),
+        });
+      }
       const domainRunStatePatch =
-        shouldUseSemanticWindow && firstPage.activeRun
+        firstPage.activeRun
           ? buildDomainHistoryRunStatePatch({
               activeRun: firstPage.activeRun,
               currentStatus: latestAgent?.status ?? "idle",
@@ -416,139 +342,37 @@ export function useRuntimeSyncController(
         type: "updateAgent",
         agentId,
         patch: {
-          historyLoadedAt: Date.now(),
-          historyFetchLimit: limit,
+          historyLoadedAt: loadedAt,
+          historyFetchLimit: boundedLimit,
           historyFetchedCount:
-            shouldUseSemanticWindow && typeof firstPage.semanticTurnsIncluded === "number"
+            typeof firstPage.semanticTurnsIncluded === "number"
               ? firstPage.semanticTurnsIncluded
               : firstPage.entries.length,
           historyMaybeTruncated: firstPage.windowTruncated,
           ...(domainRunStatePatch ?? {}),
         },
       });
-
-      if (!shouldUseSemanticWindow) {
-        return;
-      }
-      const runToBackfill = firstPage.activeRun;
-      if (!runToBackfill || runToBackfill.status !== "running" || !runToBackfill.runId) {
-        return;
-      }
-      if (runToBackfill.complete) {
-        return;
-      }
-      if (!firstPage.hasMore || firstPage.nextBeforeOutboxId === null) {
-        return;
-      }
-      if (activeRunBackfillInFlightByAgentRef.current.has(normalizedAgentId)) {
-        return;
-      }
-      activeRunBackfillInFlightByAgentRef.current.add(normalizedAgentId);
-      logTranscriptDebugMetric("domain_history_active_run_backfill_start", {
-        agentId: normalizedAgentId,
-        runId: runToBackfill.runId,
-        cursor: firstPage.nextBeforeOutboxId,
-      });
-
-      void (async () => {
-        let reason = "completed";
-        let pagesFetched = 0;
-        let cursor = firstPage.nextBeforeOutboxId;
-        try {
-          while (pagesFetched < MAX_DOMAIN_ACTIVE_RUN_BACKGROUND_PAGES) {
-            if (typeof cursor !== "number" || !Number.isFinite(cursor) || cursor <= 0) {
-              reason = "cursor-exhausted";
-              break;
-            }
-            const previousCursor = cursor;
-            const page = await fetchPage({
-              cursor,
-              view: "raw",
-            });
-            pagesFetched += 1;
-
-            ingestUnseenDomainEntries(page.entries);
-            if (normalizedAgentId) {
-              domainHistoryCursorByAgentRef.current.set(
-                normalizedAgentId,
-                page.nextBeforeOutboxId
-              );
-            }
-
-            if (page.entries.some((entry) => isLifecycleStartDomainEntryForRun(entry, runToBackfill.runId!))) {
-              reason = "found-lifecycle-start";
-              break;
-            }
-            if (page.entries.some((entry) => isTerminalDomainEntryForRun(entry, runToBackfill.runId!))) {
-              reason = "found-terminal-entry";
-              break;
-            }
-
-            if (page.activeRun && page.activeRun.runId === runToBackfill.runId && page.activeRun.status !== "running") {
-              const latest =
-                agentsRef.current.find((entry) => entry.agentId === normalizedAgentId) ?? null;
-              const patch = buildDomainHistoryRunStatePatch({
-                activeRun: page.activeRun,
-                currentStatus: latest?.status ?? "idle",
-                currentRunId: latest?.runId ?? null,
-              });
-              if (patch) {
-                dispatch({
-                  type: "updateAgent",
-                  agentId: normalizedAgentId,
-                  patch,
-                });
-              }
-              reason = "terminal-metadata";
-              break;
-            }
-
-            if (!page.hasMore || page.nextBeforeOutboxId === null) {
-              reason = "no-more-history";
-              break;
-            }
-            if (page.nextBeforeOutboxId >= previousCursor) {
-              reason = "cursor-no-progress";
-              break;
-            }
-            cursor = page.nextBeforeOutboxId;
-          }
-          if (pagesFetched >= MAX_DOMAIN_ACTIVE_RUN_BACKGROUND_PAGES && reason === "completed") {
-            reason = "page-cap";
-          }
-        } catch (error) {
-          reason = "error";
-          if (!isDisconnectLikeError(error)) {
-            console.error("Failed to backfill active run domain history.", error);
-          }
-        } finally {
-          activeRunBackfillInFlightByAgentRef.current.delete(normalizedAgentId);
-          logTranscriptDebugMetric("domain_history_active_run_backfill_stop", {
-            agentId: normalizedAgentId,
-            runId: runToBackfill.runId,
-            pagesFetched,
-            reason,
-          });
-        }
-      })();
     },
-    [dispatch, ingestUnseenDomainEntries, isDisconnectLikeError]
+    [
+      defaultHistoryLimit,
+      dispatch,
+      isDisconnectLikeError,
+      loadDomainChatHistory,
+      maxHistoryLimit,
+    ]
   );
 
   const loadAgentHistory = useCallback(
-    async (agentId: string, options?: { limit?: number; beforeOutboxId?: number }) => {
+    async (agentId: string, options?: { limit?: number }) => {
       if (useDomainApiReads) {
         const agent = agentsRef.current.find((entry) => entry.agentId === agentId) ?? null;
-        const limit =
+        const rawLimit =
           typeof options?.limit === "number" && Number.isFinite(options.limit)
-            ? Math.max(1, Math.floor(options.limit))
+            ? Math.floor(options.limit)
             : agent?.historyFetchLimit ?? defaultHistoryLimit;
-        const beforeOutboxId =
-          typeof options?.beforeOutboxId === "number" && Number.isFinite(options.beforeOutboxId)
-            ? Math.max(1, Math.floor(options.beforeOutboxId))
-            : undefined;
+        const limit = Math.min(Math.max(1, rawLimit), maxHistoryLimit);
         try {
-          await loadAgentHistoryViaDomainApi(agentId, limit, beforeOutboxId);
+          await loadAgentHistoryViaDomainApi(agentId, limit);
         } catch (error) {
           if (!isDisconnectLikeError(error)) {
             console.error("Failed to load domain runtime history.", error);
@@ -592,10 +416,12 @@ export function useRuntimeSyncController(
     (agentId: string) => {
       if (useDomainApiReads) {
         const agent = agentsRef.current.find((entry) => entry.agentId === agentId) ?? null;
-        const limit = agent?.historyFetchLimit ?? defaultHistoryLimit;
-        const beforeOutboxId = domainHistoryCursorByAgentRef.current.get(agentId) ?? null;
-        if (beforeOutboxId === null) return;
-        void loadAgentHistory(agentId, { limit, beforeOutboxId });
+        const nextLimit = resolveRuntimeSyncLoadMoreHistoryLimit({
+          currentLimit: agent?.historyFetchLimit ?? null,
+          defaultLimit: defaultHistoryLimit,
+          maxLimit: maxHistoryLimit,
+        });
+        void loadAgentHistory(agentId, { limit: nextLimit });
         return;
       }
       const agent = agentsRef.current.find((entry) => entry.agentId === agentId) ?? null;
@@ -675,10 +501,17 @@ export function useRuntimeSyncController(
       status,
       agents,
     });
+    if (useDomainApiReads) {
+      const normalizedFocusedAgentId = focusedAgentId?.trim() ?? "";
+      if (!normalizedFocusedAgentId) return;
+      if (!bootstrapAgentIds.includes(normalizedFocusedAgentId)) return;
+      void loadAgentHistory(normalizedFocusedAgentId);
+      return;
+    }
     for (const agentId of bootstrapAgentIds) {
       void loadAgentHistory(agentId);
     }
-  }, [agents, loadAgentHistory, status]);
+  }, [agents, focusedAgentId, loadAgentHistory, status, useDomainApiReads]);
 
   useEffect(() => {
     const pollingIntent = resolveRuntimeSyncFocusedHistoryPollingIntent({

@@ -172,6 +172,20 @@ describe("historyLifecycleWorkflow", () => {
     });
   });
 
+  it("applies when transcript revision changed but revision skew is allowed", () => {
+    expect(
+      resolveHistoryResponseDisposition({
+        latestAgent: createAgent({ transcriptRevision: 12 }),
+        expectedSessionKey: "agent:agent-1:main",
+        requestEpoch: 0,
+        requestRevision: 11,
+        allowTranscriptRevisionSkew: true,
+      })
+    ).toEqual({
+      kind: "apply",
+    });
+  });
+
   it("applies history even while run is still active", () => {
     expect(
       resolveHistoryResponseDisposition({

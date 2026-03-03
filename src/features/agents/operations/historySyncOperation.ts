@@ -46,6 +46,7 @@ type RunHistorySyncOperationParams = {
   client: GatewayClientLike;
   agentId: string;
   requestedLimit?: number;
+  allowTranscriptRevisionSkew?: boolean;
   getAgent: (agentId: string) => AgentState | null;
   inFlightSessionKeys: Set<string>;
   requestId: string;
@@ -188,6 +189,7 @@ export const runHistorySyncOperation = async (
       expectedSessionKey: requestIntent.sessionKey,
       requestEpoch: requestIntent.requestEpoch,
       requestRevision: requestIntent.requestRevision,
+      allowTranscriptRevisionSkew: params.allowTranscriptRevisionSkew,
     });
     const historyMessages = result.messages ?? [];
     const metadataPatch: Partial<AgentState> = buildHistoryMetadataPatch({
