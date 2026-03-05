@@ -25,6 +25,7 @@ type RuntimeMock = {
     limit?: number
   ) => { scannedRows: number; updatedRows: number; exhausted: boolean };
   subscribe: (handler: (entry: { id: number; event: unknown; createdAt: string }) => void) => () => void;
+  callGateway?: <T = unknown>(method: string, params: unknown) => Promise<T>;
 };
 
 const loadRouteModule = async <T>(modulePath: string, runtimeMock: RuntimeMock) => {
@@ -208,76 +209,35 @@ describe("runtime routes", () => {
     expect(body.error).toBe("domain_api_mode_disabled");
   });
 
-  it("agent history route returns newest window with beforeOutboxId cursor metadata", async () => {
+  it("agent history route reads chat.history and emits message history", async () => {
+    const callGateway = vi.fn().mockResolvedValue({
+      messages: [
+        {
+          role: "user",
+          timestamp: "2026-02-28T02:40:01.000Z",
+          content: "hello",
+        },
+        {
+          role: "assistant",
+          timestamp: "2026-02-28T02:40:02.000Z",
+          content: "hi there",
+        },
+      ],
+    });
     const runtimeMock: RuntimeMock = {
       ensureStarted: async () => {},
       snapshot: () => ({
         status: "connected",
         reason: null,
         asOf: "2026-02-28T02:40:00.000Z",
-        outboxHead: 5,
+        outboxHead: 10,
       }),
       eventsAfter: () => [],
-      eventsBefore: () => {
-        throw new Error("legacy scan path used");
-      },
-      eventsBeforeForAgent: (_agentId: string, beforeOutboxId: number) => {
-        if (beforeOutboxId === 6) {
-          return [
-            {
-              id: 1,
-              event: {
-                type: "gateway.event",
-                event: "runtime.delta",
-                seq: 10,
-                payload: { sessionKey: "agent:alpha:main", delta: "a" },
-                asOf: "2026-02-28T02:40:01.000Z",
-              },
-              createdAt: "2026-02-28T02:40:01.000Z",
-            },
-            {
-              id: 3,
-              event: {
-                type: "gateway.event",
-                event: "runtime.delta",
-                seq: 12,
-                payload: { sessionKey: "agent:alpha:main", delta: "c" },
-                asOf: "2026-02-28T02:40:03.000Z",
-              },
-              createdAt: "2026-02-28T02:40:03.000Z",
-            },
-            {
-              id: 5,
-              event: {
-                type: "gateway.event",
-                event: "runtime.delta",
-                seq: 14,
-                payload: { sessionKey: "agent:alpha:main", delta: "e" },
-                asOf: "2026-02-28T02:40:05.000Z",
-              },
-              createdAt: "2026-02-28T02:40:05.000Z",
-            },
-          ];
-        }
-        if (beforeOutboxId === 3) {
-          return [
-            {
-              id: 1,
-              event: {
-                type: "gateway.event",
-                event: "runtime.delta",
-                seq: 10,
-                payload: { sessionKey: "agent:alpha:main", delta: "a" },
-                asOf: "2026-02-28T02:40:01.000Z",
-              },
-              createdAt: "2026-02-28T02:40:01.000Z",
-            },
-          ];
-        }
-        return [];
-      },
+      eventsBefore: () => [],
+      eventsBeforeForAgent: () => [],
       backfillAgentHistoryIndex: () => ({ scannedRows: 0, updatedRows: 0, exhausted: true }),
       subscribe: () => () => {},
+      callGateway,
     };
 
     const mod = await loadRouteModule<{
@@ -287,91 +247,41 @@ describe("runtime routes", () => {
       ) => Promise<Response>;
     }>("@/app/api/runtime/agents/[agentId]/history/route", runtimeMock);
 
-    const firstResponse = await mod.GET(
-      new Request("http://localhost/api/runtime/agents/alpha/history?view=raw&limit=2"),
-      { params: Promise.resolve({ agentId: "alpha" }) }
-    );
-    expect(firstResponse.status).toBe(200);
-    const firstBody = (await firstResponse.json()) as {
-      entries: Array<{ id: number }>;
-      hasMore: boolean;
-      nextBeforeOutboxId: number | null;
-    };
-    expect(firstBody.entries.map((entry) => entry.id)).toEqual([3, 5]);
-    expect(firstBody.hasMore).toBe(true);
-    expect(firstBody.nextBeforeOutboxId).toBe(3);
-
-    const secondResponse = await mod.GET(
+    const response = await mod.GET(
       new Request(
-        "http://localhost/api/runtime/agents/alpha/history?view=raw&limit=2&beforeOutboxId=3"
+        "http://localhost/api/runtime/agents/alpha/history?view=raw&limit=2&sessionKey=agent:alpha:main"
       ),
       { params: Promise.resolve({ agentId: "alpha" }) }
     );
-    expect(secondResponse.status).toBe(200);
-    const secondBody = (await secondResponse.json()) as {
-      entries: Array<{ id: number }>;
+    expect(response.status).toBe(200);
+    expect(callGateway).toHaveBeenCalledWith("chat.history", {
+      sessionKey: "agent:alpha:main",
+      limit: 2,
+    });
+    const body = (await response.json()) as {
+      messages: Array<{ role: string }>;
       hasMore: boolean;
-      nextBeforeOutboxId: number | null;
+      semanticTurnsIncluded: number;
+      gatewayLimit: number;
+      gatewayCapped: boolean;
     };
-    expect(secondBody.entries.map((entry) => entry.id)).toEqual([1]);
-    expect(secondBody.hasMore).toBe(false);
-    expect(secondBody.nextBeforeOutboxId).toBeNull();
+    expect(body.messages).toHaveLength(2);
+    expect(body.messages[0]?.role).toBe("user");
+    expect(body.hasMore).toBe(true);
+    expect(body.semanticTurnsIncluded).toBe(2);
+    expect(body.gatewayLimit).toBe(2);
+    expect(body.gatewayCapped).toBe(false);
   });
 
-  it("agent history route keeps cursor stable while backfill remains incomplete", async () => {
-    const eventsBeforeForAgent = vi
-      .fn()
-      .mockReturnValueOnce([
-        {
-          id: 7,
-          event: {
-            type: "gateway.event",
-            event: "runtime.delta",
-            seq: 20,
-            payload: { sessionKey: "agent:alpha:main", delta: "newest" },
-            asOf: "2026-02-28T02:40:07.000Z",
-          },
-          createdAt: "2026-02-28T02:40:07.000Z",
-        },
-      ])
-      .mockReturnValueOnce([
-        {
-          id: 3,
-          event: {
-            type: "gateway.event",
-            event: "runtime.delta",
-            seq: 18,
-            payload: { sessionKey: "agent:alpha:main", delta: "older" },
-            asOf: "2026-02-28T02:40:03.000Z",
-          },
-          createdAt: "2026-02-28T02:40:03.000Z",
-        },
-        {
-          id: 5,
-          event: {
-            type: "gateway.event",
-            event: "runtime.delta",
-            seq: 19,
-            payload: { sessionKey: "agent:alpha:main", delta: "middle" },
-            asOf: "2026-02-28T02:40:05.000Z",
-          },
-          createdAt: "2026-02-28T02:40:05.000Z",
-        },
-        {
-          id: 7,
-          event: {
-            type: "gateway.event",
-            event: "runtime.delta",
-            seq: 20,
-            payload: { sessionKey: "agent:alpha:main", delta: "newest" },
-            asOf: "2026-02-28T02:40:07.000Z",
-          },
-          createdAt: "2026-02-28T02:40:07.000Z",
-        },
-      ]);
-    const backfillAgentHistoryIndex = vi
-      .fn()
-      .mockReturnValue({ scannedRows: 500, updatedRows: 221, exhausted: false });
+  it("agent history route defaults sessionKey and applies semantic turn windowing", async () => {
+    const callGateway = vi.fn().mockResolvedValue({
+      messages: [
+        { role: "user", content: "u1", timestamp: "2026-02-28T02:40:01.000Z" },
+        { role: "assistant", content: "a1", timestamp: "2026-02-28T02:40:02.000Z" },
+        { role: "user", content: "u2", timestamp: "2026-02-28T02:40:03.000Z" },
+        { role: "assistant", content: "a2", timestamp: "2026-02-28T02:40:04.000Z" },
+      ],
+    });
     const runtimeMock: RuntimeMock = {
       ensureStarted: async () => {},
       snapshot: () => ({
@@ -381,12 +291,11 @@ describe("runtime routes", () => {
         outboxHead: 10,
       }),
       eventsAfter: () => [],
-      eventsBefore: () => {
-        throw new Error("legacy scan path used");
-      },
-      eventsBeforeForAgent,
-      backfillAgentHistoryIndex,
+      eventsBefore: () => [],
+      eventsBeforeForAgent: () => [],
+      backfillAgentHistoryIndex: () => ({ scannedRows: 0, updatedRows: 0, exhausted: true }),
       subscribe: () => () => {},
+      callGateway,
     };
 
     const mod = await loadRouteModule<{
@@ -397,70 +306,30 @@ describe("runtime routes", () => {
     }>("@/app/api/runtime/agents/[agentId]/history/route", runtimeMock);
 
     const response = await mod.GET(
-      new Request("http://localhost/api/runtime/agents/alpha/history?view=raw&limit=2"),
+      new Request("http://localhost/api/runtime/agents/alpha/history?view=semantic&turnLimit=2&scanLimit=4"),
       { params: Promise.resolve({ agentId: "alpha" }) }
     );
     expect(response.status).toBe(200);
+    expect(callGateway).toHaveBeenCalledWith("chat.history", {
+      sessionKey: "agent:alpha:main",
+      limit: 4,
+    });
     const body = (await response.json()) as {
-      entries: Array<{ id: number }>;
+      messages: Array<{ content: string }>;
       hasMore: boolean;
-      nextBeforeOutboxId: number | null;
+      semanticTurnsIncluded: number;
+      windowTruncated: boolean;
+      gatewayLimit: number;
+      gatewayCapped: boolean;
     };
-    expect(eventsBeforeForAgent).toHaveBeenNthCalledWith(1, "alpha", 11, 3);
-    expect(backfillAgentHistoryIndex).toHaveBeenCalledWith(11, 500);
-    expect(eventsBeforeForAgent).toHaveBeenNthCalledWith(2, "alpha", 11, 3);
-    expect(body.entries.map((entry) => entry.id)).toEqual([5, 7]);
+    expect(body.messages).toHaveLength(2);
+    expect(body.messages[0]?.content).toBe("u2");
+    expect(body.messages[1]?.content).toBe("a2");
     expect(body.hasMore).toBe(true);
-    expect(body.nextBeforeOutboxId).toBe(11);
-  });
-
-  it("agent history route reports continuation when backfill cap is reached before exhaustion", async () => {
-    const eventsBeforeForAgent = vi.fn().mockReturnValue([]);
-    const backfillAgentHistoryIndex = vi
-      .fn()
-      .mockReturnValue({ scannedRows: 500, updatedRows: 0, exhausted: false });
-    const runtimeMock: RuntimeMock = {
-      ensureStarted: async () => {},
-      snapshot: () => ({
-        status: "connected",
-        reason: null,
-        asOf: "2026-02-28T02:40:00.000Z",
-        outboxHead: 10,
-      }),
-      eventsAfter: () => [],
-      eventsBefore: () => {
-        throw new Error("legacy scan path used");
-      },
-      eventsBeforeForAgent,
-      backfillAgentHistoryIndex,
-      subscribe: () => () => {},
-    };
-
-    const mod = await loadRouteModule<{
-      GET: (
-        request: Request,
-        context: { params: Promise<{ agentId: string }> }
-      ) => Promise<Response>;
-    }>("@/app/api/runtime/agents/[agentId]/history/route", runtimeMock);
-
-    const response = await mod.GET(
-      new Request("http://localhost/api/runtime/agents/alpha/history?view=raw&limit=2"),
-      { params: Promise.resolve({ agentId: "alpha" }) }
-    );
-    expect(response.status).toBe(200);
-    const body = (await response.json()) as {
-      entries: Array<{ id: number }>;
-      hasMore: boolean;
-      nextBeforeOutboxId: number | null;
-    };
-    expect(eventsBeforeForAgent).toHaveBeenNthCalledWith(1, "alpha", 11, 3);
-    expect(eventsBeforeForAgent).toHaveBeenNthCalledWith(2, "alpha", 11, 3);
-    expect(eventsBeforeForAgent).toHaveBeenNthCalledWith(3, "alpha", 11, 3);
-    expect(backfillAgentHistoryIndex).toHaveBeenNthCalledWith(1, 11, 500);
-    expect(backfillAgentHistoryIndex).toHaveBeenNthCalledWith(2, 11, 500);
-    expect(body.entries).toEqual([]);
-    expect(body.hasMore).toBe(true);
-    expect(body.nextBeforeOutboxId).toBe(11);
+    expect(body.windowTruncated).toBe(true);
+    expect(body.semanticTurnsIncluded).toBe(2);
+    expect(body.gatewayLimit).toBe(4);
+    expect(body.gatewayCapped).toBe(false);
   });
 
   it("stream route replays from Last-Event-ID and emits live updates", async () => {

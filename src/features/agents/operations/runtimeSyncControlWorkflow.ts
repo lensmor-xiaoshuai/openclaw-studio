@@ -4,7 +4,6 @@ import { GATEWAY_CHAT_HISTORY_MAX_LIMIT } from "@/lib/gateway/chatHistoryLimits"
 type RuntimeSyncStatus = "disconnected" | "connecting" | "connected";
 
 export const RUNTIME_SYNC_RECONCILE_INTERVAL_MS = 3000;
-export const RUNTIME_SYNC_FOCUSED_HISTORY_INTERVAL_MS = 4500;
 export const RUNTIME_SYNC_DEFAULT_HISTORY_LIMIT = 50;
 export const RUNTIME_SYNC_MAX_HISTORY_LIMIT = GATEWAY_CHAT_HISTORY_MAX_LIMIT;
 
@@ -15,18 +14,9 @@ type RuntimeSyncHistoryBootstrapAgent = Pick<
   "agentId" | "sessionCreated" | "historyLoadedAt"
 >;
 
-type RuntimeSyncFocusedPollingAgent = Pick<AgentState, "agentId" | "status">;
-
 type RuntimeSyncReconcilePollingIntent =
   | { kind: "start"; intervalMs: number; runImmediately: true }
   | { kind: "stop"; reason: "not-connected" };
-
-type RuntimeSyncFocusedHistoryPollingIntent =
-  | { kind: "start"; agentId: string; intervalMs: number; runImmediately: true }
-  | {
-      kind: "stop";
-      reason: "not-connected" | "missing-focused-agent" | "focused-not-running";
-    };
 
 export const resolveRuntimeSyncReconcilePollingIntent = (params: {
   status: RuntimeSyncStatus;
@@ -55,40 +45,6 @@ export const resolveRuntimeSyncBootstrapHistoryAgentIds = (params: {
     ids.push(agentId);
   }
   return ids;
-};
-
-export const resolveRuntimeSyncFocusedHistoryPollingIntent = (params: {
-  status: RuntimeSyncStatus;
-  focusedAgentId: string | null;
-  focusedAgentRunning: boolean;
-}): RuntimeSyncFocusedHistoryPollingIntent => {
-  if (params.status !== "connected") {
-    return { kind: "stop", reason: "not-connected" };
-  }
-  const focusedAgentId = params.focusedAgentId?.trim() ?? "";
-  if (!focusedAgentId) {
-    return { kind: "stop", reason: "missing-focused-agent" };
-  }
-  if (!params.focusedAgentRunning) {
-    return { kind: "stop", reason: "focused-not-running" };
-  }
-  return {
-    kind: "start",
-    agentId: focusedAgentId,
-    intervalMs: RUNTIME_SYNC_FOCUSED_HISTORY_INTERVAL_MS,
-    runImmediately: true,
-  };
-};
-
-export const shouldRuntimeSyncContinueFocusedHistoryPolling = (params: {
-  agentId: string;
-  agents: RuntimeSyncFocusedPollingAgent[];
-}): boolean => {
-  const target = params.agentId.trim();
-  if (!target) return false;
-  const agent = params.agents.find((entry) => entry.agentId === target) ?? null;
-  if (!agent) return false;
-  return agent.status === "running";
 };
 
 export const resolveRuntimeSyncLoadMoreHistoryLimit = (params: {

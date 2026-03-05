@@ -10,10 +10,6 @@ import { fetchJson } from "@/lib/http";
 import type { GatewayModelPolicySnapshot } from "@/lib/gateway/models";
 import type { StudioSettings, StudioSettingsPatch } from "@/lib/studio/settings";
 
-type GatewayClientLike = {
-  call: (method: string, params: unknown) => Promise<unknown>;
-};
-
 export type StudioBootstrapLoadCommand =
   | { kind: "set-gateway-config-snapshot"; snapshot: GatewayModelPolicySnapshot }
   | { kind: "hydrate-agents"; seeds: AgentStoreSeed[]; initialSelectedAgentId: string | undefined }
@@ -22,37 +18,22 @@ export type StudioBootstrapLoadCommand =
   | { kind: "set-error"; message: string };
 
 export async function runStudioBootstrapLoadOperation(params: {
-  client: GatewayClientLike;
-  gatewayUrl: string;
   cachedConfigSnapshot: GatewayModelPolicySnapshot | null;
-  loadStudioSettings: () => Promise<StudioSettings | null>;
-  isDisconnectLikeError: (err: unknown) => boolean;
   preferredSelectedAgentId: string | null;
   hasCurrentSelection: boolean;
-  useDomainApiMode: boolean;
-  logError?: (message: string, error: unknown) => void;
 }): Promise<StudioBootstrapLoadCommand[]> {
   try {
-    const result = params.useDomainApiMode
-      ? (
-          await fetchJson<{ result: Awaited<ReturnType<typeof hydrateAgentFleetFromGateway>> }>(
-            "/api/runtime/fleet",
-            {
-              method: "POST",
-              cache: "no-store",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ cachedConfigSnapshot: params.cachedConfigSnapshot }),
-            }
-          )
-        ).result
-      : await hydrateAgentFleetFromGateway({
-          client: params.client,
-          gatewayUrl: params.gatewayUrl,
-          cachedConfigSnapshot: params.cachedConfigSnapshot,
-          loadStudioSettings: params.loadStudioSettings,
-          isDisconnectLikeError: params.isDisconnectLikeError,
-          logError: params.logError,
-        });
+    const result = (
+      await fetchJson<{ result: Awaited<ReturnType<typeof hydrateAgentFleetFromGateway>> }>(
+        "/api/runtime/fleet",
+        {
+          method: "POST",
+          cache: "no-store",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ cachedConfigSnapshot: params.cachedConfigSnapshot }),
+        }
+      )
+    ).result;
 
     const selectionIntent = planBootstrapSelection({
       hasCurrentSelection: params.hasCurrentSelection,

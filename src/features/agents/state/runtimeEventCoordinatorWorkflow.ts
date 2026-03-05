@@ -27,7 +27,6 @@ type RuntimeEventCoordinatorState = {
   thinkingStreamByRun: Map<string, string>;
   thinkingStartedAtByRun: Map<string, number>;
   toolLinesSeenByRun: Map<string, Set<string>>;
-  historyRefreshRequestedByRun: Set<string>;
   thinkingDebugBySession: Set<string>;
   lastActivityMarkByAgent: Map<string, number>;
 };
@@ -46,17 +45,6 @@ export type RuntimeCoordinatorEffectCommand =
   | { kind: "dispatch"; action: RuntimeCoordinatorDispatchAction }
   | { kind: "queueLivePatch"; agentId: string; patch: Partial<AgentState> }
   | { kind: "clearPendingLivePatch"; agentId: string }
-  | {
-      kind: "requestHistoryRefresh";
-      agentId: string;
-      reason: "chat-final-no-trace";
-      deferMs: number;
-    }
-  | {
-      kind: "scheduleSummaryRefresh";
-      delayMs: number;
-      includeHeartbeatRefresh: boolean;
-    }
   | { kind: "cancelLifecycleFallback"; runId: string }
   | {
       kind: "scheduleLifecycleFallback";
@@ -115,7 +103,6 @@ const cloneState = (state: RuntimeEventCoordinatorState): RuntimeEventCoordinato
   thinkingStreamByRun: new Map(state.thinkingStreamByRun),
   thinkingStartedAtByRun: new Map(state.thinkingStartedAtByRun),
   toolLinesSeenByRun: new Map(state.toolLinesSeenByRun),
-  historyRefreshRequestedByRun: new Set(state.historyRefreshRequestedByRun),
   thinkingDebugBySession: new Set(state.thinkingDebugBySession),
   lastActivityMarkByAgent: new Map(state.lastActivityMarkByAgent),
 });
@@ -132,7 +119,6 @@ const clearRunTrackingState = (
   nextState.thinkingStreamByRun.delete(key);
   nextState.thinkingStartedAtByRun.delete(key);
   nextState.toolLinesSeenByRun.delete(key);
-  nextState.historyRefreshRequestedByRun.delete(key);
   return {
     state: nextState,
     effects: [{ kind: "cancelLifecycleFallback", runId: key }],
@@ -304,7 +290,6 @@ export function createRuntimeEventCoordinatorState(): RuntimeEventCoordinatorSta
     thinkingStreamByRun: new Map<string, string>(),
     thinkingStartedAtByRun: new Map<string, number>(),
     toolLinesSeenByRun: new Map<string, Set<string>>(),
-    historyRefreshRequestedByRun: new Set<string>(),
     thinkingDebugBySession: new Set<string>(),
     lastActivityMarkByAgent: new Map<string, number>(),
   };
@@ -419,15 +404,6 @@ export function reduceRuntimePolicyIntents(params: {
       });
       continue;
     }
-    if (intent.kind === "requestHistoryRefresh") {
-      effects.push({
-        kind: "requestHistoryRefresh",
-        agentId: intent.agentId,
-        reason: intent.reason,
-        deferMs: 0,
-      });
-      continue;
-    }
     if (intent.kind === "queueLatestUpdate") {
       const agentSnapshot =
         params.agentForLatestUpdate?.agentId === intent.agentId
@@ -440,13 +416,6 @@ export function reduceRuntimePolicyIntents(params: {
         agentSnapshot,
       });
       continue;
-    }
-    if (intent.kind === "scheduleSummaryRefresh") {
-      effects.push({
-        kind: "scheduleSummaryRefresh",
-        delayMs: intent.delayMs,
-        includeHeartbeatRefresh: intent.includeHeartbeatRefresh,
-      });
     }
   }
 
@@ -654,24 +623,6 @@ export function reduceRuntimeAgentWorkflowCommands(params: {
       });
       nextState = toolLinesReduced.state;
       effects.push(...toolLinesReduced.effects);
-      continue;
-    }
-    if (command.kind === "markHistoryRefreshRequested") {
-      const nextHistoryRefreshRequestedByRun = new Set(nextState.historyRefreshRequestedByRun);
-      nextHistoryRefreshRequestedByRun.add(command.runId);
-      nextState = {
-        ...nextState,
-        historyRefreshRequestedByRun: nextHistoryRefreshRequestedByRun,
-      };
-      continue;
-    }
-    if (command.kind === "scheduleHistoryRefresh") {
-      effects.push({
-        kind: "requestHistoryRefresh",
-        agentId: params.agentId,
-        reason: command.reason,
-        deferMs: command.delayMs,
-      });
       continue;
     }
     if (command.kind === "applyLifecycleDecision") {

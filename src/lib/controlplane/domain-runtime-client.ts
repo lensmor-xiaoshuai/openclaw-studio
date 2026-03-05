@@ -7,7 +7,6 @@ import type {
   CronRunResult,
 } from "@/lib/cron/types";
 import type { SkillStatusReport } from "@/lib/skills/types";
-import { clampGatewayChatHistoryLimit } from "@/lib/gateway/chatHistoryLimits";
 
 type Envelope<T> = {
   ok?: boolean;
@@ -15,18 +14,21 @@ type Envelope<T> = {
   error?: string;
 };
 
-type SessionsListEntry = {
-  key?: string;
-  updatedAt?: number | null;
-  origin?: { label?: string | null } | null;
-};
+export type DomainAgentHistoryView = "semantic" | "raw";
+export type DomainChatHistoryMessage = Record<string, unknown>;
 
-type SessionsListResult = {
-  sessions?: SessionsListEntry[];
-};
-
-type ChatHistoryResult = {
-  messages?: Record<string, unknown>[];
+export type DomainAgentHistoryResult = {
+  enabled: boolean;
+  agentId: string;
+  view: DomainAgentHistoryView;
+  messages: DomainChatHistoryMessage[];
+  hasMore: boolean;
+  semanticTurnsIncluded: number;
+  windowTruncated: boolean;
+  gatewayLimit: number;
+  gatewayCapped: boolean;
+  freshness?: unknown;
+  error?: string;
 };
 
 const unwrapPayload = <T>(result: Envelope<T>): T => {
@@ -180,42 +182,50 @@ export const writeDomainAgentFile = async (params: {
   unwrapPayload(result);
 };
 
-export const listDomainSessions = async (params: {
+export const loadDomainAgentHistoryWindow = async (params: {
   agentId: string;
-  includeGlobal?: boolean;
-  includeUnknown?: boolean;
-  search?: string;
-  limit?: number;
-}): Promise<SessionsListResult> => {
-  const query = new URLSearchParams();
-  query.set("agentId", params.agentId.trim());
-  query.set("includeGlobal", params.includeGlobal === true ? "true" : "false");
-  query.set("includeUnknown", params.includeUnknown === true ? "true" : "false");
-  if (params.search?.trim()) {
-    query.set("search", params.search.trim());
-  }
-  if (typeof params.limit === "number" && Number.isFinite(params.limit) && params.limit > 0) {
-    query.set("limit", String(Math.floor(params.limit)));
-  }
-
-  const result = await fetchJson<Envelope<SessionsListResult>>(`/api/runtime/sessions?${query.toString()}`, {
-    cache: "no-store",
-  });
-  return unwrapPayload(result);
-};
-
-export const loadDomainChatHistory = async (params: {
   sessionKey: string;
+  view?: DomainAgentHistoryView;
+  turnLimit?: number;
+  scanLimit?: number;
   limit?: number;
-}): Promise<ChatHistoryResult> => {
-  const query = new URLSearchParams({ sessionKey: params.sessionKey.trim() });
-  const boundedLimit = clampGatewayChatHistoryLimit(params.limit);
-  if (typeof boundedLimit === "number") {
-    query.set("limit", String(boundedLimit));
+}): Promise<DomainAgentHistoryResult> => {
+  const agentId = params.agentId.trim();
+  if (!agentId) {
+    throw new Error("agentId is required.");
   }
-  const result = await fetchJson<Envelope<ChatHistoryResult>>(
-    `/api/runtime/chat-history?${query.toString()}`,
+  const sessionKey = params.sessionKey.trim();
+  if (!sessionKey) {
+    throw new Error("sessionKey is required.");
+  }
+  const view = params.view === "raw" ? "raw" : "semantic";
+  const query = new URLSearchParams();
+  query.set("sessionKey", sessionKey);
+  query.set("view", view);
+  const turnLimit =
+    typeof params.turnLimit === "number" && Number.isFinite(params.turnLimit) && params.turnLimit > 0
+      ? Math.floor(params.turnLimit)
+      : undefined;
+  if (typeof turnLimit === "number") {
+    query.set("turnLimit", String(turnLimit));
+  }
+  const scanLimit =
+    typeof params.scanLimit === "number" && Number.isFinite(params.scanLimit) && params.scanLimit > 0
+      ? Math.floor(params.scanLimit)
+      : undefined;
+  if (typeof scanLimit === "number") {
+    query.set("scanLimit", String(scanLimit));
+  }
+  const limit =
+    typeof params.limit === "number" && Number.isFinite(params.limit) && params.limit > 0
+      ? Math.floor(params.limit)
+      : undefined;
+  if (typeof limit === "number") {
+    query.set("limit", String(limit));
+  }
+
+  return await fetchJson<DomainAgentHistoryResult>(
+    `/api/runtime/agents/${encodeURIComponent(agentId)}/history?${query.toString()}`,
     { cache: "no-store" }
   );
-  return unwrapPayload(result);
 };

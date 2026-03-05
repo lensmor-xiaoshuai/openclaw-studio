@@ -74,9 +74,12 @@ export const stubRuntimeRoutes = async (page: Page, fixture: RuntimeRouteFixture
       contentType: "application/json",
       body: JSON.stringify({
         enabled: true,
-        entries: [],
+        messages: [],
         hasMore: false,
-        nextBeforeOutboxId: null,
+        semanticTurnsIncluded: 0,
+        windowTruncated: false,
+        gatewayLimit: 200,
+        gatewayCapped: false,
         freshness: {
           source: "gateway",
           stale: false,

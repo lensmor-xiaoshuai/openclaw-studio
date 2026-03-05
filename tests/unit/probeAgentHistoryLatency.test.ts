@@ -125,7 +125,6 @@ describe("probe-agent-history-latency", () => {
     ).toEqual([
       "/api/runtime/summary",
       "/api/runtime/agents/main/history?limit=50&view=semantic&turnLimit=50&scanLimit=800",
-      "/api/runtime/chat-history?sessionKey=agent%3Amain%3Amain&limit=50",
     ]);
   });
 
@@ -160,30 +159,16 @@ describe("probe-agent-history-latency", () => {
             stats: { p95Ms: null },
             errors: { count: 0 },
           },
-          {
-            name: "chat-history",
-            stats: { p95Ms: null },
-            errors: { count: 0 },
-          },
         ],
         sloP95Ms: 750,
       })
     ).toBe("errors present -> fix endpoint failures before latency diagnosis");
 
     const baseEndpoints = [
-      {
-        name: "summary",
-        stats: { p95Ms: 1500 },
-        errors: { count: 0 },
-      },
+      { name: "summary", stats: { p95Ms: 300 }, errors: { count: 0 } },
       {
         name: "semantic-history",
         stats: { p95Ms: 900 },
-        errors: { count: 0 },
-      },
-      {
-        name: "chat-history",
-        stats: { p95Ms: 300 },
         errors: { count: 0 },
       },
     ];
@@ -192,29 +177,29 @@ describe("probe-agent-history-latency", () => {
         endpoints: baseEndpoints,
         sloP95Ms: 750,
       })
-    ).toBe("semantic slow, chat-history fast -> projection/index issue likely");
+    ).toBe(
+      "semantic slow, summary healthy -> transcript-backed gateway history path is likely bottlenecked"
+    );
 
     expect(
       classifyBottleneckHint({
         endpoints: [
-          baseEndpoints[0],
+          { name: "summary", stats: { p95Ms: 900 }, errors: { count: 0 } },
           { name: "semantic-history", stats: { p95Ms: 300 }, errors: { count: 0 } },
-          { name: "chat-history", stats: { p95Ms: 900 }, errors: { count: 0 } },
         ],
         sloP95Ms: 750,
       })
-    ).toBe("chat-history slow, semantic fast -> gateway/transcript read likely");
+    ).toBe("summary slow, semantic healthy -> runtime snapshot path likely");
 
     expect(
       classifyBottleneckHint({
         endpoints: [
-          baseEndpoints[0],
-          { name: "semantic-history", stats: { p95Ms: 900 }, errors: { count: 0 } },
-          { name: "chat-history", stats: { p95Ms: 950 }, errors: { count: 0 } },
+          { name: "summary", stats: { p95Ms: 900 }, errors: { count: 0 } },
+          { name: "semantic-history", stats: { p95Ms: 950 }, errors: { count: 0 } },
         ],
         sloP95Ms: 750,
       })
-    ).toBe("both slow -> upstream/gateway saturation or host contention");
+    ).toBe("summary and semantic slow -> upstream saturation or host contention");
   });
 
   it("assesses pass/fail with endpoint errors and blocking slo breaches only", () => {
@@ -230,12 +215,6 @@ describe("probe-agent-history-latency", () => {
           },
           {
             name: "semantic-history",
-            sloBlocking: true,
-            stats: { p95Ms: 700 },
-            errors: { count: 0 },
-          },
-          {
-            name: "chat-history",
             sloBlocking: true,
             stats: { p95Ms: 700 },
             errors: { count: 0 },
@@ -260,12 +239,6 @@ describe("probe-agent-history-latency", () => {
             stats: { p95Ms: 900 },
             errors: { count: 0 },
           },
-          {
-            name: "chat-history",
-            sloBlocking: true,
-            stats: { p95Ms: 300 },
-            errors: { count: 0 },
-          },
         ],
       }).pass
     ).toBe(false);
@@ -282,12 +255,6 @@ describe("probe-agent-history-latency", () => {
           },
           {
             name: "semantic-history",
-            sloBlocking: true,
-            stats: { p95Ms: 300 },
-            errors: { count: 0 },
-          },
-          {
-            name: "chat-history",
             sloBlocking: true,
             stats: { p95Ms: 300 },
             errors: { count: 0 },

@@ -126,7 +126,7 @@ export const resolveTargetFromFleet = (params) => {
 
 export const buildProbePaths = ({ agentId, sessionKey }) => {
   const normalizedAgentId = encodeURIComponent(asTrimmed(agentId));
-  const normalizedSessionKey = encodeURIComponent(asTrimmed(sessionKey));
+  void sessionKey;
   return [
     {
       name: "summary",
@@ -138,12 +138,6 @@ export const buildProbePaths = ({ agentId, sessionKey }) => {
       name: "semantic-history",
       method: "GET",
       path: `/api/runtime/agents/${normalizedAgentId}/history?limit=50&view=semantic&turnLimit=50&scanLimit=800`,
-      sloBlocking: true,
-    },
-    {
-      name: "chat-history",
-      method: "GET",
-      path: `/api/runtime/chat-history?sessionKey=${normalizedSessionKey}&limit=50`,
       sloBlocking: true,
     },
   ];
@@ -190,24 +184,24 @@ export const classifyBottleneckHint = (params) => {
     return "errors present -> fix endpoint failures before latency diagnosis";
   }
   const semantic = params.endpoints.find((entry) => entry.name === "semantic-history") ?? null;
-  const chat = params.endpoints.find((entry) => entry.name === "chat-history") ?? null;
-  if (!semantic || !chat) {
+  const summary = params.endpoints.find((entry) => entry.name === "summary") ?? null;
+  if (!semantic || !summary) {
     return "incomplete probe results.";
   }
   const semanticP95 = semantic.stats.p95Ms;
-  const chatP95 = chat.stats.p95Ms;
+  const summaryP95 = summary.stats.p95Ms;
   const semanticSlow = typeof semanticP95 === "number" && semanticP95 > params.sloP95Ms;
-  const chatSlow = typeof chatP95 === "number" && chatP95 > params.sloP95Ms;
-  if (semanticSlow && !chatSlow) {
-    return "semantic slow, chat-history fast -> projection/index issue likely";
+  const summarySlow = typeof summaryP95 === "number" && summaryP95 > params.sloP95Ms;
+  if (semanticSlow && !summarySlow) {
+    return "semantic slow, summary healthy -> transcript-backed gateway history path is likely bottlenecked";
   }
-  if (chatSlow && !semanticSlow) {
-    return "chat-history slow, semantic fast -> gateway/transcript read likely";
+  if (summarySlow && !semanticSlow) {
+    return "summary slow, semantic healthy -> runtime snapshot path likely";
   }
-  if (semanticSlow && chatSlow) {
-    return "both slow -> upstream/gateway saturation or host contention";
+  if (semanticSlow && summarySlow) {
+    return "summary and semantic slow -> upstream saturation or host contention";
   }
-  return "semantic and chat-history are within SLO";
+  return "summary and semantic are within SLO";
 };
 
 export const assessProbe = (params) => {

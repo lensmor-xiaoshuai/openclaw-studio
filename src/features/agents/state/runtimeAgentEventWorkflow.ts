@@ -37,12 +37,6 @@ export type RuntimeAgentWorkflowCommand =
   | { kind: "markThinkingStarted"; runId: string; at: number }
   | { kind: "queueAgentPatch"; patch: Partial<AgentState> }
   | { kind: "appendToolLines"; lines: string[]; timestampMs: number }
-  | { kind: "markHistoryRefreshRequested"; runId: string }
-  | {
-      kind: "scheduleHistoryRefresh";
-      delayMs: number;
-      reason: "chat-final-no-trace";
-    }
   | {
       kind: "applyLifecycleDecision";
       decision: LifecycleTerminalDecision;
@@ -61,7 +55,7 @@ export type RuntimeAgentWorkflowInput = {
   previousThinkingRaw: string | null;
   previousAssistantRaw: string | null;
   thinkingStartedAtMs: number | null;
-  historyRefreshRequested: boolean;
+  historyRefreshRequested?: boolean;
   lifecycleFallbackDelayMs: number;
 };
 
@@ -175,7 +169,6 @@ export const planRuntimeAgentEvent = (
     previousThinkingRaw,
     previousAssistantRaw,
     thinkingStartedAtMs,
-    historyRefreshRequested,
     lifecycleFallbackDelayMs,
   } = input;
   const runId = payload.runId?.trim() ?? "";
@@ -377,14 +370,6 @@ export const planRuntimeAgentEvent = (
       commands.push({ kind: "appendToolLines", lines, timestampMs: nowMs });
     }
 
-    if (agent.showThinkingTraces && !historyRefreshRequested) {
-      commands.push({ kind: "markHistoryRefreshRequested", runId });
-      commands.push({
-        kind: "scheduleHistoryRefresh",
-        delayMs: 750,
-        reason: "chat-final-no-trace",
-      });
-    }
     return { commands };
   }
 

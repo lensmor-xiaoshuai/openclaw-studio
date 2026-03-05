@@ -5,24 +5,12 @@ import {
 } from "@/features/agents/operations/latestUpdateWorkflow";
 import type { AgentState } from "@/features/agents/state/store";
 import { extractText, isHeartbeatPrompt, stripUiMetadata } from "@/lib/text/message-extract";
+import type {
+  DomainAgentHistoryResult,
+  DomainChatHistoryMessage,
+} from "@/lib/controlplane/domain-runtime-client";
 
-type ChatHistoryMessage = Record<string, unknown>;
-
-type ChatHistoryResult = {
-  messages?: ChatHistoryMessage[];
-};
-
-type SessionsListEntry = {
-  key?: string;
-  updatedAt?: number | null;
-  origin?: { label?: string | null } | null;
-};
-
-type SessionsListResult = {
-  sessions?: SessionsListEntry[];
-};
-
-const findLatestHeartbeatResponse = (messages: ChatHistoryMessage[]) => {
+const findLatestHeartbeatResponse = (messages: DomainChatHistoryMessage[]) => {
   let awaitingHeartbeatReply = false;
   let latestResponse: string | null = null;
   for (const message of messages) {
@@ -43,7 +31,14 @@ const findLatestHeartbeatResponse = (messages: ChatHistoryMessage[]) => {
 };
 
 type SpecialLatestUpdateDeps = {
-  callGateway: (method: string, params: unknown) => Promise<unknown>;
+  loadAgentHistoryWindow: (params: {
+    agentId: string;
+    sessionKey: string;
+    view?: "semantic" | "raw";
+    limit?: number;
+    turnLimit?: number;
+    scanLimit?: number;
+  }) => Promise<DomainAgentHistoryResult>;
   listCronJobs: () => Promise<{ jobs: CronJobSummary[] }>;
   resolveCronJobForAgent: (jobs: CronJobSummary[], agentId: string) => CronJobSummary | null;
   formatCronJobDisplay: (job: CronJobSummary) => string;
@@ -57,7 +52,6 @@ type SpecialLatestUpdateDeps = {
 
 type SpecialLatestUpdateOperation = {
   update: (agentId: string, agent: AgentState, message: string) => Promise<void>;
-  refreshHeartbeat: (agents: AgentState[]) => void;
   clearInFlight: (agentId: string) => void;
 };
 
@@ -85,32 +79,13 @@ export function createSpecialLatestUpdateOperation(
 
     try {
       if (intent.kind === "fetch-heartbeat") {
-        const result = (await deps.callGateway("sessions.list", {
+        const history = await deps.loadAgentHistoryWindow({
           agentId: intent.agentId,
-          includeGlobal: false,
-          includeUnknown: false,
-          limit: intent.sessionLimit,
-        })) as SessionsListResult;
-
-        const entries = Array.isArray(result.sessions) ? result.sessions : [];
-        const heartbeatSessions = entries.filter((entry) => {
-          const label = entry.origin?.label;
-          return typeof label === "string" && label.toLowerCase() === "heartbeat";
-        });
-        const candidates = heartbeatSessions.length > 0 ? heartbeatSessions : entries;
-        const sorted = [...candidates].sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
-        const sessionKey = sorted[0]?.key;
-        if (!sessionKey) {
-          deps.dispatchUpdateAgent(agent.agentId, buildLatestUpdatePatch(""));
-          return;
-        }
-
-        const history = (await deps.callGateway("chat.history", {
-          sessionKey,
+          sessionKey: agent.sessionKey,
+          view: "raw",
           limit: intent.historyLimit,
-        })) as ChatHistoryResult;
-        const messages = Array.isArray(history.messages) ? history.messages : [];
-        const content = findLatestHeartbeatResponse(messages) ?? "";
+        });
+        const content = findLatestHeartbeatResponse(history.messages) ?? "";
         deps.dispatchUpdateAgent(agent.agentId, buildLatestUpdatePatch(content, "heartbeat"));
         return;
       }
@@ -132,16 +107,9 @@ export function createSpecialLatestUpdateOperation(
     }
   };
 
-  const refreshHeartbeat: SpecialLatestUpdateOperation["refreshHeartbeat"] = (agents) => {
-    for (const agent of agents) {
-      void update(agent.agentId, agent, "heartbeat");
-    }
-  };
-
   const clearInFlight: SpecialLatestUpdateOperation["clearInFlight"] = (agentId) => {
     inFlight.delete(agentId);
   };
 
-  return { update, refreshHeartbeat, clearInFlight };
+  return { update, clearInFlight };
 }
-

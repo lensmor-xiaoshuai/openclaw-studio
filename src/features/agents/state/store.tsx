@@ -62,6 +62,8 @@ export type AgentState = AgentStoreSeed & {
   historyFetchLimit: number | null;
   historyFetchedCount: number | null;
   historyMaybeTruncated: boolean;
+  historyHasMore?: boolean;
+  historyGatewayCapReached?: boolean;
   toolCallingEnabled: boolean;
   showThinkingTraces: boolean;
   transcriptEntries?: TranscriptEntry[];
@@ -95,6 +97,8 @@ export const buildNewSessionAgentPatch = (agent: AgentState): Partial<AgentState
     historyFetchLimit: null,
     historyFetchedCount: null,
     historyMaybeTruncated: false,
+    historyHasMore: false,
+    historyGatewayCapReached: false,
     awaitingUserInput: false,
     hasUnseenActivity: false,
     sessionCreated: true,
@@ -214,6 +218,10 @@ const createRuntimeAgentState = (
     historyFetchLimit: sameSessionKey ? (existing?.historyFetchLimit ?? null) : null,
     historyFetchedCount: sameSessionKey ? (existing?.historyFetchedCount ?? null) : null,
     historyMaybeTruncated: sameSessionKey ? (existing?.historyMaybeTruncated ?? false) : false,
+    historyHasMore: sameSessionKey ? (existing?.historyHasMore ?? false) : false,
+    historyGatewayCapReached: sameSessionKey
+      ? (existing?.historyGatewayCapReached ?? false)
+      : false,
     toolCallingEnabled: seed.toolCallingEnabled ?? existing?.toolCallingEnabled ?? false,
     showThinkingTraces: seed.showThinkingTraces ?? existing?.showThinkingTraces ?? true,
     transcriptEntries,

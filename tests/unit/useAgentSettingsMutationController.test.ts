@@ -470,8 +470,10 @@ describe("useAgentSettingsMutationController", () => {
         { isCancelled: () => false }
       );
     });
-    expect(ctx.loadAgents).toHaveBeenCalled();
-    expect(ctx.setMobilePaneChat).toHaveBeenCalled();
+    await waitFor(() => {
+      expect(ctx.loadAgents).toHaveBeenCalled();
+      expect(ctx.setMobilePaneChat).toHaveBeenCalled();
+    });
     await waitFor(() => {
       expect(ctx.getValue().restartingMutationBlock).toBeNull();
     });

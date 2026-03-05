@@ -76,7 +76,6 @@ const createInput = (overrides?: InputOverrides): RuntimeAgentWorkflowInput => (
   previousThinkingRaw: null,
   previousAssistantRaw: null,
   thinkingStartedAtMs: null,
-  historyRefreshRequested: false,
   lifecycleFallbackDelayMs: 0,
   ...(overrides ?? {}),
 });
@@ -311,7 +310,7 @@ describe("runtime agent event workflow", () => {
     expect(append?.lines[0]).toContain("[[tool]] myTool (tool-1)");
   });
 
-  it("plans tool result append and one-time history refresh", () => {
+  it("plans tool result append without implicit history refresh", () => {
     const result = planRuntimeAgentEvent(
       createInput({
         payload: createPayload({
@@ -323,22 +322,13 @@ describe("runtime agent event workflow", () => {
             result: { content: [{ type: "text", text: "ok" }] },
           },
         }),
-        historyRefreshRequested: false,
       })
     );
 
     const append = findCommand(result.commands, "appendToolLines");
     expect(append).toBeDefined();
     expect(append?.lines.some((line) => line.startsWith("[[tool-result]]"))).toBe(true);
-    expect(findCommand(result.commands, "markHistoryRefreshRequested")).toEqual({
-      kind: "markHistoryRefreshRequested",
-      runId: "run-1",
-    });
-    expect(findCommand(result.commands, "scheduleHistoryRefresh")).toEqual({
-      kind: "scheduleHistoryRefresh",
-      delayMs: 750,
-      reason: "chat-final-no-trace",
-    });
+    expect(result.commands.some((command) => command.kind === "applyPolicyIntents")).toBe(false);
   });
 
   it("plans lifecycle decision with deferred transition patch when fallback is scheduled", () => {
@@ -367,7 +357,7 @@ describe("runtime agent event workflow", () => {
     ).toBe(true);
   });
 
-  it("does not request history refresh when tool result already requested once", () => {
+  it("keeps tool result flow free from refresh scheduling commands", () => {
     const result = planRuntimeAgentEvent(
       createInput({
         payload: createPayload({
@@ -379,12 +369,10 @@ describe("runtime agent event workflow", () => {
             result: { content: [{ type: "text", text: "ok" }] },
           },
         }),
-        historyRefreshRequested: true,
       })
     );
 
-    expect(findCommand(result.commands, "markHistoryRefreshRequested")).toBeUndefined();
-    expect(findCommand(result.commands, "scheduleHistoryRefresh")).toBeUndefined();
+    expect(result.commands.some((command) => command.kind === "applyPolicyIntents")).toBe(false);
   });
 
   it("keeps preflight intents empty for active lifecycle start and emits activity command", () => {

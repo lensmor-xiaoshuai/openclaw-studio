@@ -11,9 +11,7 @@ export type RuntimePolicyIntent =
   | { kind: "clearPendingLivePatch"; agentId: string }
   | { kind: "queueLivePatch"; agentId: string; patch: Partial<AgentState> }
   | { kind: "dispatchUpdateAgent"; agentId: string; patch: Partial<AgentState> }
-  | { kind: "requestHistoryRefresh"; agentId: string; reason: "chat-final-no-trace" }
-  | { kind: "queueLatestUpdate"; agentId: string; message: string }
-  | { kind: "scheduleSummaryRefresh"; delayMs: number; includeHeartbeatRefresh: boolean };
+  | { kind: "queueLatestUpdate"; agentId: string; message: string };
 
 type RuntimeChatPolicyInput = {
   agentId: string;
@@ -29,7 +27,7 @@ type RuntimeChatPolicyInput = {
   hasThinkingStarted: boolean;
   isClosedRun: boolean;
   isStaleTerminal: boolean;
-  shouldRequestHistoryRefresh: boolean;
+  shouldRequestHistoryRefresh?: boolean;
   shouldUpdateLastResult: boolean;
   shouldSetRunIdle: boolean;
   shouldSetRunError: boolean;
@@ -132,13 +130,6 @@ export const decideRuntimeChatEvent = (
   }
 
   if (input.state === "final") {
-    if (input.shouldRequestHistoryRefresh) {
-      intents.push({
-        kind: "requestHistoryRefresh",
-        agentId: input.agentId,
-        reason: "chat-final-no-trace",
-      });
-    }
     if (input.shouldUpdateLastResult && input.lastResultText) {
       intents.push({
         kind: "dispatchUpdateAgent",
@@ -202,13 +193,6 @@ export const decideRuntimeAgentEvent = (
 export const decideSummaryRefreshEvent = (
   input: RuntimeSummaryPolicyInput
 ): RuntimePolicyIntent[] => {
-  if (input.status !== "connected") return [];
-  if (input.event !== "presence" && input.event !== "heartbeat") return [];
-  return [
-    {
-      kind: "scheduleSummaryRefresh",
-      delayMs: 750,
-      includeHeartbeatRefresh: input.event === "heartbeat",
-    },
-  ];
+  void input;
+  return [];
 };

@@ -72,10 +72,8 @@ import {
 import {
   mergePendingApprovalsForFocusedAgent,
 } from "@/features/agents/approvals/pendingStore";
-import {
-  resolveLatestUpdateKind,
-} from "@/features/agents/operations/latestUpdateWorkflow";
 import { createSpecialLatestUpdateOperation } from "@/features/agents/operations/specialLatestUpdateOperation";
+import { buildLatestUpdateTriggerMarker } from "@/features/agents/operations/latestUpdateWorkflow";
 import {
   resolveAgentPermissionsDraft,
 } from "@/features/agents/operations/agentPermissionsOperation";
@@ -115,9 +113,8 @@ import {
 } from "@/features/agents/operations/settingsRouteWorkflow";
 import { useSettingsRouteController } from "@/features/agents/operations/useSettingsRouteController";
 import {
-  loadDomainChatHistory,
+  loadDomainAgentHistoryWindow,
   listDomainCronJobs,
-  listDomainSessions,
 } from "@/lib/controlplane/domain-runtime-client";
 import { useRuntimeEventStream } from "@/features/agents/state/useRuntimeEventStream";
 const PENDING_EXEC_APPROVAL_PRUNE_GRACE_MS = 500;
@@ -225,7 +222,6 @@ const AgentStudioPage = () => {
     gatewayUrl,
     token,
     localGatewayDefaults,
-    domainApiModeEnabled,
     error: gatewayError,
     connect,
     disconnect,
@@ -233,23 +229,22 @@ const AgentStudioPage = () => {
     setGatewayUrl,
     setToken,
   } = useStudioGatewaySettings(settingsCoordinator);
-  const useDomainApiMode = domainApiModeEnabled;
   const gatewayStatus: GatewayStatus = status;
   const gatewayConnected = gatewayStatus === "connected";
-  const coreConnected = useDomainApiMode ? true : gatewayConnected;
-  const coreStatus: GatewayStatus = useDomainApiMode ? "connected" : gatewayStatus;
+  const coreConnected = true;
+  const coreStatus: GatewayStatus = "connected";
   const runtimeStreamResumeKey = useMemo(() => {
     const normalizedGatewayUrl = gatewayUrl.trim();
     if (!normalizedGatewayUrl) return null;
-    return `${useDomainApiMode ? "domain" : "gateway"}:${normalizedGatewayUrl}`;
-  }, [gatewayUrl, useDomainApiMode]);
+    return `domain:${normalizedGatewayUrl}`;
+  }, [gatewayUrl]);
   const runtimeWriteTransport = useMemo(
     () =>
       createRuntimeWriteTransport({
         client,
-        useDomainIntents: useDomainApiMode,
+        useDomainIntents: true,
       }),
-    [client, useDomainApiMode]
+    [client]
   );
 
   const { state, dispatch, hydrateAgents, setError, setLoading } = useAgentStore();
@@ -258,7 +253,6 @@ const AgentStudioPage = () => {
   const [focusedPreferencesLoaded, setFocusedPreferencesLoaded] = useState(false);
   const [agentsLoadedOnce, setAgentsLoadedOnce] = useState(false);
   const [didAttemptGatewayConnect, setDidAttemptGatewayConnect] = useState(false);
-  const [heartbeatTick, setHeartbeatTick] = useState(0);
   const stateRef = useRef(state);
   const dispatchAgentStoreAction = useCallback(
     (action: Parameters<typeof agentStoreReducer>[1]) => {
@@ -328,7 +322,6 @@ const AgentStudioPage = () => {
     return selectedInFilter ?? filteredAgents[0] ?? null;
   }, [filteredAgents, selectedAgent]);
   const focusedAgentId = focusedAgent?.agentId ?? null;
-  const focusedAgentRunning = focusedAgent?.status === "running";
   const focusedAgentStopDisabledReason = useMemo(() => {
     if (!focusedAgent) return null;
     if (focusedAgent.status !== "running") return null;
@@ -478,35 +471,8 @@ const AgentStudioPage = () => {
   }, []);
 
   const specialLatestUpdate = useMemo(() => {
-    const callGateway = async (method: string, params: unknown): Promise<unknown> => {
-      if (method === "sessions.list") {
-        const body = (params ?? {}) as {
-          agentId?: string;
-          includeGlobal?: boolean;
-          includeUnknown?: boolean;
-          search?: string;
-          limit?: number;
-        };
-        return await listDomainSessions({
-          agentId: body.agentId ?? "",
-          includeGlobal: body.includeGlobal,
-          includeUnknown: body.includeUnknown,
-          search: body.search,
-          limit: body.limit,
-        });
-      }
-      if (method === "chat.history") {
-        const body = (params ?? {}) as { sessionKey?: string; limit?: number };
-        return await loadDomainChatHistory({
-          sessionKey: body.sessionKey ?? "",
-          limit: body.limit,
-        });
-      }
-      throw new Error(`Unsupported special latest-update method in domain mode: ${method}`);
-    };
-
     return createSpecialLatestUpdateOperation({
-      callGateway,
+      loadAgentHistoryWindow: loadDomainAgentHistoryWindow,
       listCronJobs: () => listDomainCronJobs({ includeDisabled: true }),
       resolveCronJobForAgent,
       formatCronJobDisplay,
@@ -517,11 +483,6 @@ const AgentStudioPage = () => {
       logError: (message) => console.error(message),
     });
   }, [dispatch, resolveCronJobForAgent]);
-
-  const refreshHeartbeatLatestUpdate = useCallback(() => {
-    const agents = stateRef.current.agents;
-    specialLatestUpdate.refreshHeartbeat(agents);
-  }, [specialLatestUpdate]);
 
   const loadAgents = useCallback(async () => {
     const inFlight = loadAgentsInFlightRef.current;
@@ -534,15 +495,9 @@ const AgentStudioPage = () => {
       setLoading(true);
       try {
         const commands = await runStudioBootstrapLoadOperation({
-          client,
-          gatewayUrl,
           cachedConfigSnapshot: gatewayConfigSnapshot,
-          loadStudioSettings: settingsCoordinator.loadSettings.bind(settingsCoordinator),
-          isDisconnectLikeError: isGatewayDisconnectLikeError,
           preferredSelectedAgentId: preferredSelectedAgentIdRef.current,
           hasCurrentSelection: Boolean(stateRef.current.selectedAgentId),
-          useDomainApiMode,
-          logError: (message, error) => console.error(message, error),
         });
         executeStudioBootstrapLoadCommands({
           commands,
@@ -567,16 +522,12 @@ const AgentStudioPage = () => {
       }
     }
   }, [
-    client,
     dispatch,
     hydrateAgents,
     setError,
     setLoading,
-    gatewayUrl,
     gatewayConfigSnapshot,
-    settingsCoordinator,
     coreConnected,
-    useDomainApiMode,
   ]);
 
   const enqueueConfigMutationFromRef = useCallback(
@@ -587,17 +538,12 @@ const AgentStudioPage = () => {
   );
 
   const { refreshGatewayConfigSnapshot } = useGatewayConfigSyncController({
-    client,
     status: gatewayStatus,
-    useDomainApiReads: useDomainApiMode,
     settingsRouteActive,
     inspectSidebarAgentId,
-    gatewayConfigSnapshot,
     setGatewayConfigSnapshot,
     setGatewayModels,
     setGatewayModelsError,
-    enqueueConfigMutation: enqueueConfigMutationFromRef,
-    loadAgents,
     isDisconnectLikeError: isGatewayDisconnectLikeError,
   });
 
@@ -635,7 +581,7 @@ const AgentStudioPage = () => {
       setMobilePane("chat");
     },
     setError,
-    useDomainIntents: useDomainApiMode,
+    useDomainIntents: true,
   });
 
   const hasRenameMutationBlock = settingsMutationController.hasRenameMutationBlock;
@@ -793,7 +739,6 @@ const AgentStudioPage = () => {
       ),
       hasCreateAgentBlock: Boolean(createAgentBlock && createAgentBlock.phase !== "queued"),
       gatewayUrl,
-      useDomainApiMode,
       lastCompletedKey: startupFleetBootstrapCompletedKeyRef.current,
       inFlightKey: startupFleetBootstrapInFlightKeyRef.current,
     });
@@ -816,7 +761,6 @@ const AgentStudioPage = () => {
     gatewayUrl,
     loadAgents,
     restartingMutationBlock,
-    useDomainApiMode,
   ]);
 
   useEffect(() => {
@@ -828,7 +772,7 @@ const AgentStudioPage = () => {
   useEffect(() => {
     startupFleetBootstrapCompletedKeyRef.current = null;
     startupFleetBootstrapInFlightKeyRef.current = null;
-  }, [gatewayUrl, useDomainApiMode]);
+  }, [gatewayUrl]);
 
   useEffect(() => {
     if (!coreConnected) {
@@ -883,15 +827,17 @@ const AgentStudioPage = () => {
   useEffect(() => {
     for (const agent of agents) {
       const lastMessage = agent.lastUserMessage?.trim() ?? "";
-      const kind = resolveLatestUpdateKind(lastMessage);
       const key = agent.agentId;
-      const marker = kind === "heartbeat" ? `${lastMessage}:${heartbeatTick}` : lastMessage;
+      const marker = buildLatestUpdateTriggerMarker({
+        message: lastMessage,
+        lastAssistantMessageAt: agent.lastAssistantMessageAt,
+      });
       const previous = specialUpdateRef.current.get(key);
       if (previous === marker) continue;
       specialUpdateRef.current.set(key, marker);
       void specialLatestUpdate.update(agent.agentId, agent, lastMessage);
     }
-  }, [agents, heartbeatTick, specialLatestUpdate]);
+  }, [agents, specialLatestUpdate]);
 
   const ingestDomainOutboxEntries = useCallback((entries: ControlPlaneOutboxEntry[]) => {
     if (!Array.isArray(entries) || entries.length === 0) return;
@@ -924,17 +870,11 @@ const AgentStudioPage = () => {
     loadMoreAgentHistory,
     clearHistoryInFlight,
   } = useRuntimeSyncController({
-    client,
     status: coreStatus,
     agents,
     focusedAgentId,
-    focusedAgentRunning,
     dispatch,
-    clearRunTracking: (runId) => {
-      runtimeEventHandlerRef.current?.clearRunTracking(runId);
-    },
     isDisconnectLikeError: isGatewayDisconnectLikeError,
-    useDomainApiReads: useDomainApiMode,
   });
 
   const {
@@ -1349,26 +1289,12 @@ const AgentStudioPage = () => {
 
   useEffect(() => {
     const handler = createGatewayRuntimeEventHandler({
-      getStatus: () => coreStatus,
       getAgents: () => stateRef.current.agents,
       dispatch: dispatchAgentStoreAction,
       queueLivePatch,
       clearPendingLivePatch,
-      loadSummarySnapshot,
-      requestHistoryRefresh: ({ agentId }) => {
-        if (useDomainApiMode) {
-          const normalizedFocusedAgentId = stateRef.current.selectedAgentId?.trim() ?? "";
-          if (!normalizedFocusedAgentId || normalizedFocusedAgentId !== agentId.trim()) {
-            return;
-          }
-        }
-        void loadAgentHistory(agentId);
-      },
-      refreshHeartbeatLatestUpdate,
-      bumpHeartbeatTick: () => setHeartbeatTick((prev) => prev + 1),
       setTimeout: (fn, delayMs) => window.setTimeout(fn, delayMs),
       clearTimeout: (id) => window.clearTimeout(id),
-      isDisconnectLikeError: isGatewayDisconnectLikeError,
       logWarn: (message, meta) => console.warn(message, meta),
       shouldSuppressRunAbortedLine: ({ agentId, runId, stopReason }) => {
         if (stopReason !== "rpc") return false;
@@ -1393,15 +1319,10 @@ const AgentStudioPage = () => {
     };
   }, [
     dispatchAgentStoreAction,
-    loadAgentHistory,
-    loadSummarySnapshot,
     clearPendingLivePatch,
     queueLivePatch,
-    refreshHeartbeatLatestUpdate,
     specialLatestUpdate,
     ingestDomainOutboxEntries,
-    useDomainApiMode,
-    coreStatus,
   ]);
 
   useRuntimeEventStream({

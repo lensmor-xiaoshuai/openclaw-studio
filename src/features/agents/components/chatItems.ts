@@ -1,5 +1,4 @@
 import {
-  formatThinkingMarkdown,
   isToolMarkdown,
   isMetaMarkdown,
   isTraceMarkdown,
@@ -35,34 +34,21 @@ type AgentChatRenderBlock =
       traceEvents: AssistantTraceEvent[];
     };
 
-type BuildAgentChatItemsInput = {
-  outputLines: string[];
-  streamText: string | null;
-  liveThinkingTrace: string;
-  showThinkingTraces: boolean;
-  toolCallingEnabled: boolean;
-};
-
 export const DEFAULT_SEMANTIC_RENDER_TURN_LIMIT = 50;
 
 const normalizeUserDisplayText = (value: string): string => {
   return value.replace(/\s+/g, " ").trim();
 };
 
-const normalizeThinkingDisplayText = (value: string): string => {
-  const markdown = formatThinkingMarkdown(value);
-  const normalized = stripTraceMarkdown(markdown).trim();
-  return normalized;
-};
-
 export const buildFinalAgentChatItems = ({
   outputLines,
   showThinkingTraces,
   toolCallingEnabled,
-}: Pick<
-  BuildAgentChatItemsInput,
-  "outputLines" | "showThinkingTraces" | "toolCallingEnabled"
->): AgentChatItem[] => {
+}: {
+  outputLines: string[];
+  showThinkingTraces: boolean;
+  toolCallingEnabled: boolean;
+}): AgentChatItem[] => {
   const items: AgentChatItem[] = [];
   let currentMeta: ItemMeta | null = null;
   const appendThinking = (text: string) => {
@@ -169,119 +155,6 @@ export const buildFinalAgentChatItems = ({
       ...(currentMeta ? { timestampMs: currentMeta.timestampMs, thinkingDurationMs: currentMeta.thinkingDurationMs } : {}),
     });
   }
-  return items;
-};
-
-export const buildAgentChatItems = ({
-  outputLines,
-  streamText,
-  liveThinkingTrace,
-  showThinkingTraces,
-  toolCallingEnabled,
-}: BuildAgentChatItemsInput): AgentChatItem[] => {
-  const items: AgentChatItem[] = [];
-  let currentMeta: ItemMeta | null = null;
-  const appendThinking = (text: string, live?: boolean) => {
-    const normalized = text.trim();
-    if (!normalized) return;
-    const previous = items[items.length - 1];
-    if (!previous || previous.kind !== "thinking") {
-      items.push({
-        kind: "thinking",
-        text: normalized,
-        live,
-        ...(currentMeta ? { timestampMs: currentMeta.timestampMs, thinkingDurationMs: currentMeta.thinkingDurationMs } : {}),
-      });
-      return;
-    }
-    if (previous.text === normalized) {
-      if (live) previous.live = true;
-      return;
-    }
-    if (normalized.startsWith(previous.text)) {
-      previous.text = normalized;
-      if (live) previous.live = true;
-      return;
-    }
-    if (previous.text.startsWith(normalized)) {
-      if (live) previous.live = true;
-      return;
-    }
-    previous.text = `${previous.text}\n\n${normalized}`;
-    if (live) previous.live = true;
-  };
-
-  for (const line of outputLines) {
-    if (!line) continue;
-    if (isMetaMarkdown(line)) {
-      const parsed = parseMetaMarkdown(line);
-      if (parsed) {
-        currentMeta = {
-          role: parsed.role,
-          timestampMs: parsed.timestamp,
-          ...(typeof parsed.thinkingDurationMs === "number" ? { thinkingDurationMs: parsed.thinkingDurationMs } : {}),
-        };
-      }
-      continue;
-    }
-    if (isTraceMarkdown(line)) {
-      if (!showThinkingTraces) continue;
-      const text = stripTraceMarkdown(line).trim();
-      if (!text) continue;
-      appendThinking(text);
-      continue;
-    }
-    if (isToolMarkdown(line)) {
-      if (!toolCallingEnabled) continue;
-      items.push({
-        kind: "tool",
-        text: line,
-        ...(currentMeta ? { timestampMs: currentMeta.timestampMs } : {}),
-      });
-      continue;
-    }
-    const trimmed = line.trim();
-    if (trimmed.startsWith(">")) {
-      const text = trimmed.replace(/^>\s?/, "").trim();
-      if (text) {
-        const currentTimestamp =
-          currentMeta?.role === "user" ? currentMeta.timestampMs : undefined;
-        items.push({
-          kind: "user",
-          text: normalizeUserDisplayText(text),
-          ...(typeof currentTimestamp === "number" ? { timestampMs: currentTimestamp } : {}),
-        });
-        if (currentMeta?.role === "user") {
-          currentMeta = null;
-        }
-      }
-      continue;
-    }
-    const normalizedAssistant = normalizeAssistantDisplayText(line);
-    if (!normalizedAssistant) continue;
-    items.push({
-      kind: "assistant",
-      text: normalizedAssistant,
-      ...(currentMeta ? { timestampMs: currentMeta.timestampMs, thinkingDurationMs: currentMeta.thinkingDurationMs } : {}),
-    });
-  }
-
-  const liveStream = streamText?.trim();
-
-  if (showThinkingTraces) {
-    const normalizedLiveThinking = normalizeThinkingDisplayText(liveThinkingTrace);
-    if (normalizedLiveThinking) {
-      appendThinking(normalizedLiveThinking, true);
-    }
-  }
-
-  if (liveStream) {
-    const normalizedStream = normalizeAssistantDisplayText(liveStream);
-    if (normalizedStream) {
-      items.push({ kind: "assistant", text: normalizedStream, live: true });
-    }
-  }
-
   return items;
 };
 

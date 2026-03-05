@@ -28,6 +28,21 @@ export const resolveLatestUpdateKind = (message: string): LatestUpdateKind => {
   return cronIndex > heartbeatIndex ? "cron" : "heartbeat";
 };
 
+export const buildLatestUpdateTriggerMarker = (params: {
+  message: string;
+  lastAssistantMessageAt: number | null;
+}): string => {
+  const normalizedMessage = params.message.trim();
+  const kind = resolveLatestUpdateKind(normalizedMessage);
+  if (!kind) return normalizedMessage;
+  const assistantMarker =
+    typeof params.lastAssistantMessageAt === "number" &&
+    Number.isFinite(params.lastAssistantMessageAt)
+      ? String(params.lastAssistantMessageAt)
+      : "";
+  return `${normalizedMessage}:${assistantMarker}`;
+};
+
 export const resolveLatestUpdateIntent = (params: {
   message: string;
   agentId: string;

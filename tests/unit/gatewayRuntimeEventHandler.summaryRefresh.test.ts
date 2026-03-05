@@ -1,8 +1,7 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { createGatewayRuntimeEventHandler } from "@/features/agents/state/gatewayRuntimeEventHandler";
 import type { AgentState } from "@/features/agents/state/store";
-import type { EventFrame } from "@/lib/gateway/GatewayClient";
 
 const createAgent = (): AgentState => ({
   agentId: "agent-1",
@@ -40,77 +39,29 @@ const createAgent = (): AgentState => ({
 });
 
 describe("gateway runtime event handler (summary refresh)", () => {
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
-  it("debounces summary refresh events and loads summary once", async () => {
-    vi.useFakeTimers();
-    const loadSummarySnapshot = vi.fn(async () => {});
-    const bumpHeartbeatTick = vi.fn();
-    const refreshHeartbeatLatestUpdate = vi.fn();
+  it("ignores presence/heartbeat summary-refresh events", () => {
+    const dispatch = vi.fn();
+    const queueLivePatch = vi.fn();
+    const requestHistoryRefresh = vi.fn(async () => {});
 
     const handler = createGatewayRuntimeEventHandler({
-      getStatus: () => "connected",
       getAgents: () => [createAgent()],
-      dispatch: vi.fn(),
-      queueLivePatch: vi.fn(),
+      dispatch,
+      queueLivePatch,
       clearPendingLivePatch: vi.fn(),
-      now: () => 1000,
-      loadSummarySnapshot,
-      requestHistoryRefresh: vi.fn(async () => {}),
-      refreshHeartbeatLatestUpdate,
-      bumpHeartbeatTick,
+      requestHistoryRefresh,
       setTimeout: (fn, ms) => setTimeout(fn, ms) as unknown as number,
       clearTimeout: (id) => clearTimeout(id as unknown as NodeJS.Timeout),
-      isDisconnectLikeError: () => false,
-      logWarn: vi.fn(),
-      updateSpecialLatestUpdate: vi.fn(),
-    });
-
-    const presence: EventFrame = { type: "event", event: "presence", payload: {} };
-    handler.handleEvent(presence);
-    handler.handleEvent(presence);
-    handler.handleEvent({ type: "event", event: "heartbeat", payload: {} });
-
-    expect(bumpHeartbeatTick).toHaveBeenCalledTimes(1);
-    expect(refreshHeartbeatLatestUpdate).toHaveBeenCalledTimes(1);
-    expect(loadSummarySnapshot).toHaveBeenCalledTimes(0);
-
-    await vi.advanceTimersByTimeAsync(749);
-    expect(loadSummarySnapshot).toHaveBeenCalledTimes(0);
-
-    await vi.advanceTimersByTimeAsync(1);
-    expect(loadSummarySnapshot).toHaveBeenCalledTimes(1);
-
-    handler.dispose();
-  });
-
-  it("ignores summary refresh when not connected", async () => {
-    vi.useFakeTimers();
-    const loadSummarySnapshot = vi.fn(async () => {});
-    const handler = createGatewayRuntimeEventHandler({
-      getStatus: () => "disconnected",
-      getAgents: () => [createAgent()],
-      dispatch: vi.fn(),
-      queueLivePatch: vi.fn(),
-      clearPendingLivePatch: vi.fn(),
-      now: () => 1000,
-      loadSummarySnapshot,
-      requestHistoryRefresh: vi.fn(async () => {}),
-      refreshHeartbeatLatestUpdate: vi.fn(),
-      bumpHeartbeatTick: vi.fn(),
-      setTimeout: (fn, ms) => setTimeout(fn, ms) as unknown as number,
-      clearTimeout: (id) => clearTimeout(id as unknown as NodeJS.Timeout),
-      isDisconnectLikeError: () => false,
-      logWarn: vi.fn(),
       updateSpecialLatestUpdate: vi.fn(),
     });
 
     handler.handleEvent({ type: "event", event: "presence", payload: {} });
-    await vi.runAllTimersAsync();
+    handler.handleEvent({ type: "event", event: "heartbeat", payload: {} });
 
-    expect(loadSummarySnapshot).toHaveBeenCalledTimes(0);
+    expect(dispatch).not.toHaveBeenCalled();
+    expect(queueLivePatch).not.toHaveBeenCalled();
+    expect(requestHistoryRefresh).not.toHaveBeenCalled();
+
     handler.dispose();
   });
 });

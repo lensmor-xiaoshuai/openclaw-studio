@@ -1,15 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  RUNTIME_SYNC_FOCUSED_HISTORY_INTERVAL_MS,
   RUNTIME_SYNC_MAX_HISTORY_LIMIT,
   RUNTIME_SYNC_RECONCILE_INTERVAL_MS,
   resolveRuntimeSyncBootstrapHistoryAgentIds,
-  resolveRuntimeSyncFocusedHistoryPollingIntent,
   resolveRuntimeSyncGapRecoveryIntent,
   resolveRuntimeSyncLoadMoreHistoryLimit,
   resolveRuntimeSyncReconcilePollingIntent,
-  shouldRuntimeSyncContinueFocusedHistoryPolling,
 } from "@/features/agents/operations/runtimeSyncControlWorkflow";
 
 describe("runtimeSyncControlWorkflow", () => {
@@ -52,66 +49,6 @@ describe("runtimeSyncControlWorkflow", () => {
         agents: [{ agentId: "agent-1", sessionCreated: true, historyLoadedAt: null }],
       })
     ).toEqual([]);
-  });
-
-  it("plans focused history polling with explicit stop reasons", () => {
-    expect(
-      resolveRuntimeSyncFocusedHistoryPollingIntent({
-        status: "connected",
-        focusedAgentId: "agent-1",
-        focusedAgentRunning: true,
-      })
-    ).toEqual({
-      kind: "start",
-      agentId: "agent-1",
-      intervalMs: RUNTIME_SYNC_FOCUSED_HISTORY_INTERVAL_MS,
-      runImmediately: true,
-    });
-
-    expect(
-      resolveRuntimeSyncFocusedHistoryPollingIntent({
-        status: "connected",
-        focusedAgentId: null,
-        focusedAgentRunning: true,
-      })
-    ).toEqual({
-      kind: "stop",
-      reason: "missing-focused-agent",
-    });
-
-    expect(
-      resolveRuntimeSyncFocusedHistoryPollingIntent({
-        status: "connected",
-        focusedAgentId: "agent-1",
-        focusedAgentRunning: false,
-      })
-    ).toEqual({
-      kind: "stop",
-      reason: "focused-not-running",
-    });
-  });
-
-  it("checks focused polling continuation against latest running state", () => {
-    expect(
-      shouldRuntimeSyncContinueFocusedHistoryPolling({
-        agentId: "agent-1",
-        agents: [{ agentId: "agent-1", status: "running" }],
-      })
-    ).toBe(true);
-
-    expect(
-      shouldRuntimeSyncContinueFocusedHistoryPolling({
-        agentId: "agent-1",
-        agents: [{ agentId: "agent-1", status: "idle" }],
-      })
-    ).toBe(false);
-
-    expect(
-      shouldRuntimeSyncContinueFocusedHistoryPolling({
-        agentId: "agent-1",
-        agents: [],
-      })
-    ).toBe(false);
   });
 
   it("resolves load-more limits with floor and max bounds", () => {

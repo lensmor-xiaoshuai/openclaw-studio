@@ -120,11 +120,7 @@ describe("runtime event policy", () => {
       kind: "markRunClosed",
       runId: "run-1",
     });
-    expect(findIntent(intents, "requestHistoryRefresh")).toEqual({
-      kind: "requestHistoryRefresh",
-      agentId: "agent-1",
-      reason: "chat-final-no-trace",
-    });
+    expect(intents.some((intent) => intent.kind === "queueLatestUpdate")).toBe(true);
     const updates = intents.filter(
       (intent): intent is Extract<RuntimePolicyIntent, { kind: "dispatchUpdateAgent" }> =>
         intent.kind === "dispatchUpdateAgent"
@@ -248,7 +244,7 @@ describe("runtime event policy", () => {
     expect(stale).toEqual([{ kind: "clearRunTracking", runId: "run-1" }]);
   });
 
-  it("returns_summary_refresh_intent_for_presence_and_heartbeat", () => {
+  it("returns_no_summary_refresh_intent_for_presence_and_heartbeat", () => {
     const presence = decideSummaryRefreshEvent({
       event: "presence",
       status: "connected",
@@ -262,20 +258,8 @@ describe("runtime event policy", () => {
       status: "disconnected",
     });
 
-    expect(presence).toEqual([
-      {
-        kind: "scheduleSummaryRefresh",
-        delayMs: 750,
-        includeHeartbeatRefresh: false,
-      },
-    ]);
-    expect(heartbeat).toEqual([
-      {
-        kind: "scheduleSummaryRefresh",
-        delayMs: 750,
-        includeHeartbeatRefresh: true,
-      },
-    ]);
+    expect(presence).toEqual([]);
+    expect(heartbeat).toEqual([]);
     expect(disconnected).toEqual([]);
   });
 });

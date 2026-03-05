@@ -4,7 +4,6 @@ import type { AgentState } from "@/features/agents/state/store";
 import {
   createRuntimeEventCoordinatorState,
   markChatRunSeen,
-  reduceClearRunTracking,
   reduceLifecycleFallbackFired,
   reduceMarkActivityThrottled,
   reduceRuntimeAgentWorkflowCommands,
@@ -77,16 +76,6 @@ describe("runtimeEventCoordinatorWorkflow", () => {
           agentId: "agent-1",
           patch: { status: "running", runId: "run-1" },
         },
-        {
-          kind: "requestHistoryRefresh",
-          agentId: "agent-1",
-          reason: "chat-final-no-trace",
-        },
-        {
-          kind: "scheduleSummaryRefresh",
-          delayMs: 750,
-          includeHeartbeatRefresh: true,
-        },
         { kind: "clearRunTracking", runId: "run-1" },
       ],
     });
@@ -105,17 +94,6 @@ describe("runtimeEventCoordinatorWorkflow", () => {
             agentId: "agent-1",
             patch: { status: "running", runId: "run-1" },
           },
-        },
-        {
-          kind: "requestHistoryRefresh",
-          agentId: "agent-1",
-          reason: "chat-final-no-trace",
-          deferMs: 0,
-        },
-        {
-          kind: "scheduleSummaryRefresh",
-          delayMs: 750,
-          includeHeartbeatRefresh: true,
         },
         {
           kind: "cancelLifecycleFallback",
@@ -291,7 +269,7 @@ describe("runtimeEventCoordinatorWorkflow", () => {
     expect(skipped.effects).toEqual([]);
   });
 
-  it("tracks history refresh state per run and clears it with run cleanup", () => {
+  it("clears run tracking state and emits fallback cancellation", () => {
     const reduced = reduceRuntimeAgentWorkflowCommands({
       state: createRuntimeEventCoordinatorState(),
       payload: createAgentPayload({
@@ -302,26 +280,14 @@ describe("runtimeEventCoordinatorWorkflow", () => {
       agent: createAgent(),
       nowMs: 2000,
       commands: [
-        { kind: "markHistoryRefreshRequested", runId: "run-1" },
         {
-          kind: "scheduleHistoryRefresh",
-          delayMs: 750,
-          reason: "chat-final-no-trace",
+          kind: "applyPolicyIntents",
+          intents: [{ kind: "clearRunTracking", runId: "run-1" }],
         },
       ],
     });
 
-    expect(reduced.state.historyRefreshRequestedByRun.has("run-1")).toBe(true);
     expect(reduced.effects).toContainEqual({
-      kind: "requestHistoryRefresh",
-      agentId: "agent-1",
-      reason: "chat-final-no-trace",
-      deferMs: 750,
-    });
-
-    const cleared = reduceClearRunTracking({ state: reduced.state, runId: "run-1" });
-    expect(cleared.state.historyRefreshRequestedByRun.has("run-1")).toBe(false);
-    expect(cleared.effects).toContainEqual({
       kind: "cancelLifecycleFallback",
       runId: "run-1",
     });

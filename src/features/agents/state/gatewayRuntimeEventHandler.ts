@@ -7,7 +7,6 @@ import {
   type AgentEventPayload,
   type ChatEventPayload,
 } from "@/features/agents/state/runtimeEventBridge";
-import { decideSummaryRefreshEvent } from "@/features/agents/state/runtimeEventPolicy";
 import { isClosedRun } from "@/features/agents/state/runtimeTerminalWorkflow";
 import {
   createRuntimeEventCoordinatorState,
@@ -18,7 +17,6 @@ import {
   reduceMarkActivityThrottled,
   reduceRuntimeAgentWorkflowCommands,
   reduceRuntimeChatWorkflowCommands,
-  reduceRuntimePolicyIntents,
   type RuntimeCoordinatorDispatchAction,
   type RuntimeCoordinatorEffectCommand,
 } from "@/features/agents/state/runtimeEventCoordinatorWorkflow";
@@ -38,25 +36,19 @@ import { planRuntimeChatEvent } from "@/features/agents/state/runtimeChatEventWo
 import { planRuntimeAgentEvent } from "@/features/agents/state/runtimeAgentEventWorkflow";
 
 type GatewayRuntimeEventHandlerDeps = {
-  getStatus: () => "disconnected" | "connecting" | "connected";
   getAgents: () => AgentState[];
   dispatch: (action: RuntimeCoordinatorDispatchAction) => void;
   queueLivePatch: (agentId: string, patch: Partial<AgentState>) => void;
   clearPendingLivePatch: (agentId: string) => void;
   now?: () => number;
-
-  loadSummarySnapshot: () => Promise<void>;
-  requestHistoryRefresh: (command: {
+  requestHistoryRefresh?: (command: {
     agentId: string;
     reason: "chat-final-no-trace";
   }) => Promise<void> | void;
-  refreshHeartbeatLatestUpdate: () => void;
-  bumpHeartbeatTick: () => void;
 
   setTimeout: (fn: () => void, delayMs: number) => number;
   clearTimeout: (id: number) => void;
 
-  isDisconnectLikeError: (err: unknown) => boolean;
   logWarn?: (message: string, meta?: unknown) => void;
   shouldSuppressRunAbortedLine?: (params: {
     agentId: string;
@@ -144,7 +136,6 @@ export function createGatewayRuntimeEventHandler(
   let coordinatorState = createRuntimeEventCoordinatorState();
 
   const lifecycleFallbackTimerIdByRun = new Map<string, number>();
-  let summaryRefreshTimer: number | null = null;
 
   const toRunId = (runId?: string | null): string => runId?.trim() ?? "";
 
@@ -175,29 +166,6 @@ export function createGatewayRuntimeEventHandler(
       }
       if (effect.kind === "clearPendingLivePatch") {
         deps.clearPendingLivePatch(effect.agentId);
-        continue;
-      }
-      if (effect.kind === "requestHistoryRefresh") {
-        deps.setTimeout(() => {
-          void deps.requestHistoryRefresh({
-            agentId: effect.agentId,
-            reason: effect.reason,
-          });
-        }, effect.deferMs);
-        continue;
-      }
-      if (effect.kind === "scheduleSummaryRefresh") {
-        if (effect.includeHeartbeatRefresh) {
-          deps.bumpHeartbeatTick();
-          deps.refreshHeartbeatLatestUpdate();
-        }
-        if (summaryRefreshTimer !== null) {
-          deps.clearTimeout(summaryRefreshTimer);
-        }
-        summaryRefreshTimer = deps.setTimeout(() => {
-          summaryRefreshTimer = null;
-          void deps.loadSummarySnapshot();
-        }, effect.delayMs);
         continue;
       }
       if (effect.kind === "cancelLifecycleFallback") {
@@ -287,10 +255,6 @@ export function createGatewayRuntimeEventHandler(
   };
 
   const dispose = () => {
-    if (summaryRefreshTimer !== null) {
-      deps.clearTimeout(summaryRefreshTimer);
-      summaryRefreshTimer = null;
-    }
     for (const timerId of lifecycleFallbackTimerIdByRun.values()) {
       deps.clearTimeout(timerId);
     }
@@ -511,8 +475,6 @@ export function createGatewayRuntimeEventHandler(
         coordinatorState.assistantStreamByRun.get(payload.runId) ?? null,
       thinkingStartedAtMs:
         coordinatorState.thinkingStartedAtByRun.get(payload.runId) ?? null,
-      historyRefreshRequested:
-        coordinatorState.historyRefreshRequestedByRun.has(payload.runId),
       lifecycleFallbackDelayMs: LIFECYCLE_FALLBACK_DELAY_MS,
     });
 
@@ -531,22 +493,7 @@ export function createGatewayRuntimeEventHandler(
 
   const handleEvent = (event: EventFrame) => {
     const eventKind = classifyGatewayEventKind(event.event);
-
-    if (eventKind === "summary-refresh") {
-      const summaryIntents = decideSummaryRefreshEvent({
-        event: event.event,
-        status: deps.getStatus(),
-      });
-      const reduced = reduceRuntimePolicyIntents({
-        state: coordinatorState,
-        intents: summaryIntents,
-        nowMs: now(),
-        options: { closedRunTtlMs: CLOSED_RUN_TTL_MS },
-      });
-      coordinatorState = reduced.state;
-      executeCoordinatorEffects(reduced.effects);
-      return;
-    }
+    if (eventKind === "summary-refresh") return;
 
     if (eventKind === "runtime-chat") {
       const payload = event.payload as ChatEventPayload | undefined;

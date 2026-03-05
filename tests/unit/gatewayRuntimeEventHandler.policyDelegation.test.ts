@@ -1,15 +1,20 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { AgentState } from "@/features/agents/state/store";
 import type { EventFrame } from "@/lib/gateway/GatewayClient";
 
-const policyMocks = vi.hoisted(() => ({
-  decideRuntimeChatEvent: vi.fn(),
-  decideRuntimeAgentEvent: vi.fn(),
-  decideSummaryRefreshEvent: vi.fn(),
+const workflowMocks = vi.hoisted(() => ({
+  planRuntimeChatEvent: vi.fn(),
+  planRuntimeAgentEvent: vi.fn(),
 }));
 
-vi.mock("@/features/agents/state/runtimeEventPolicy", () => policyMocks);
+vi.mock("@/features/agents/state/runtimeChatEventWorkflow", () => ({
+  planRuntimeChatEvent: workflowMocks.planRuntimeChatEvent,
+}));
+
+vi.mock("@/features/agents/state/runtimeAgentEventWorkflow", () => ({
+  planRuntimeAgentEvent: workflowMocks.planRuntimeAgentEvent,
+}));
 
 import { createGatewayRuntimeEventHandler } from "@/features/agents/state/gatewayRuntimeEventHandler";
 
@@ -50,34 +55,32 @@ const createAgent = (overrides?: Partial<AgentState>): AgentState => ({
 });
 
 describe("gateway runtime event handler policy delegation", () => {
-  afterEach(() => {
-    vi.clearAllMocks();
-  });
+  it("routes runtime chat events through chat workflow commands", () => {
+    workflowMocks.planRuntimeChatEvent.mockReturnValue({
+      commands: [
+        {
+          kind: "applyPolicyIntents",
+          intents: [
+            {
+              kind: "queueLivePatch",
+              agentId: "agent-1",
+              patch: { streamText: "from-chat-workflow", status: "running" },
+            },
+          ],
+        },
+      ],
+    });
+    workflowMocks.planRuntimeAgentEvent.mockReturnValue({ commands: [] });
 
-  it("uses chat policy intents to drive delta live patching", () => {
-    policyMocks.decideRuntimeChatEvent.mockReturnValue([
-      {
-        kind: "queueLivePatch",
-        agentId: "agent-1",
-        patch: { streamText: "from-policy", status: "running" },
-      },
-    ]);
     const queueLivePatch = vi.fn();
     const handler = createGatewayRuntimeEventHandler({
-      getStatus: () => "connected",
       getAgents: () => [createAgent()],
       dispatch: vi.fn(),
       queueLivePatch,
       clearPendingLivePatch: vi.fn(),
-      now: () => 1000,
-      loadSummarySnapshot: vi.fn(async () => {}),
       requestHistoryRefresh: vi.fn(async () => {}),
-      refreshHeartbeatLatestUpdate: vi.fn(),
-      bumpHeartbeatTick: vi.fn(),
       setTimeout: (fn, ms) => setTimeout(fn, ms) as unknown as number,
       clearTimeout: (id) => clearTimeout(id as unknown as NodeJS.Timeout),
-      isDisconnectLikeError: () => false,
-      logWarn: vi.fn(),
       updateSpecialLatestUpdate: vi.fn(),
     });
 
@@ -91,33 +94,36 @@ describe("gateway runtime event handler policy delegation", () => {
         message: { role: "assistant", content: "raw" },
       },
     };
+
     handler.handleEvent(event);
 
-    expect(policyMocks.decideRuntimeChatEvent).toHaveBeenCalledTimes(1);
+    expect(workflowMocks.planRuntimeChatEvent).toHaveBeenCalledTimes(1);
     expect(queueLivePatch).toHaveBeenCalledWith("agent-1", {
-      streamText: "from-policy",
+      streamText: "from-chat-workflow",
       status: "running",
     });
   });
 
-  it("uses agent policy intents to short-circuit processing", () => {
-    policyMocks.decideRuntimeAgentEvent.mockReturnValue([{ kind: "ignore", reason: "forced" }]);
-    const queueLivePatch = vi.fn();
+  it("routes runtime agent events through agent workflow commands", () => {
+    workflowMocks.planRuntimeChatEvent.mockReturnValue({ commands: [] });
+    workflowMocks.planRuntimeAgentEvent.mockReturnValue({
+      commands: [
+        {
+          kind: "applyPolicyIntents",
+          intents: [{ kind: "ignore", reason: "forced" }],
+        },
+      ],
+    });
+
+    const dispatch = vi.fn();
     const handler = createGatewayRuntimeEventHandler({
-      getStatus: () => "connected",
       getAgents: () => [createAgent()],
-      dispatch: vi.fn(),
-      queueLivePatch,
+      dispatch,
+      queueLivePatch: vi.fn(),
       clearPendingLivePatch: vi.fn(),
-      now: () => 1000,
-      loadSummarySnapshot: vi.fn(async () => {}),
       requestHistoryRefresh: vi.fn(async () => {}),
-      refreshHeartbeatLatestUpdate: vi.fn(),
-      bumpHeartbeatTick: vi.fn(),
       setTimeout: (fn, ms) => setTimeout(fn, ms) as unknown as number,
       clearTimeout: (id) => clearTimeout(id as unknown as NodeJS.Timeout),
-      isDisconnectLikeError: () => false,
-      logWarn: vi.fn(),
       updateSpecialLatestUpdate: vi.fn(),
     });
 
@@ -132,47 +138,7 @@ describe("gateway runtime event handler policy delegation", () => {
       },
     } as EventFrame);
 
-    expect(policyMocks.decideRuntimeAgentEvent).toHaveBeenCalledTimes(1);
-    expect(queueLivePatch).not.toHaveBeenCalled();
-  });
-
-  it("uses summary policy intents for heartbeat refresh behavior", async () => {
-    vi.useFakeTimers();
-    policyMocks.decideSummaryRefreshEvent.mockReturnValue([
-      {
-        kind: "scheduleSummaryRefresh",
-        delayMs: 10,
-        includeHeartbeatRefresh: true,
-      },
-    ]);
-    const loadSummarySnapshot = vi.fn(async () => {});
-    const bumpHeartbeatTick = vi.fn();
-    const refreshHeartbeatLatestUpdate = vi.fn();
-    const handler = createGatewayRuntimeEventHandler({
-      getStatus: () => "connected",
-      getAgents: () => [createAgent()],
-      dispatch: vi.fn(),
-      queueLivePatch: vi.fn(),
-      clearPendingLivePatch: vi.fn(),
-      now: () => 1000,
-      loadSummarySnapshot,
-      requestHistoryRefresh: vi.fn(async () => {}),
-      refreshHeartbeatLatestUpdate,
-      bumpHeartbeatTick,
-      setTimeout: (fn, ms) => setTimeout(fn, ms) as unknown as number,
-      clearTimeout: (id) => clearTimeout(id as unknown as NodeJS.Timeout),
-      isDisconnectLikeError: () => false,
-      logWarn: vi.fn(),
-      updateSpecialLatestUpdate: vi.fn(),
-    });
-
-    handler.handleEvent({ type: "event", event: "presence", payload: {} });
-    await vi.advanceTimersByTimeAsync(10);
-
-    expect(policyMocks.decideSummaryRefreshEvent).toHaveBeenCalledTimes(1);
-    expect(bumpHeartbeatTick).toHaveBeenCalledTimes(1);
-    expect(refreshHeartbeatLatestUpdate).toHaveBeenCalledTimes(1);
-    expect(loadSummarySnapshot).toHaveBeenCalledTimes(1);
-    vi.useRealTimers();
+    expect(workflowMocks.planRuntimeAgentEvent).toHaveBeenCalledTimes(1);
+    expect(dispatch).not.toHaveBeenCalled();
   });
 });

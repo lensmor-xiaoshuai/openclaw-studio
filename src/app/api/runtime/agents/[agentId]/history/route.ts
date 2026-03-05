@@ -1,27 +1,39 @@
 import { NextResponse } from "next/server";
 
 import { deriveRuntimeFreshness } from "@/lib/controlplane/degraded-read";
+import { ControlPlaneGatewayError } from "@/lib/controlplane/openclaw-adapter";
 import { serializeRuntimeInitFailure } from "@/lib/controlplane/runtime-init-errors";
 import { bootstrapDomainRuntime } from "@/lib/controlplane/runtime-route-bootstrap";
 import {
   countSemanticTurns,
-  resolveActiveRunFromEntries,
   selectSemanticHistoryWindow,
+  type SemanticHistoryMessage,
 } from "@/lib/controlplane/semantic-history-window";
-import type { ControlPlaneOutboxEntry } from "@/lib/controlplane/contracts";
+import {
+  clampGatewayChatHistoryLimit,
+  GATEWAY_CHAT_HISTORY_MAX_LIMIT,
+} from "@/lib/gateway/chatHistoryLimits";
 
 export const runtime = "nodejs";
 
 type HistoryView = "raw" | "semantic";
+type GatewayChatHistoryPayload = {
+  messages?: unknown[];
+};
 
 const DEFAULT_RAW_LIMIT = 200;
-const MAX_RAW_LIMIT = 1000;
 const DEFAULT_TURN_LIMIT = 50;
 const MAX_TURN_LIMIT = 400;
 const DEFAULT_SCAN_LIMIT = 800;
-const MAX_SCAN_LIMIT = 5000;
-const BACKFILL_BATCH_LIMIT = 500;
-const MAX_BACKFILL_BATCHES_PER_REQUEST = 2;
+
+const HISTORY_DEBUG_ENABLED = /^(1|true|yes|on)$/i.test(
+  (process.env.NEXT_PUBLIC_STUDIO_TRANSCRIPT_DEBUG ?? "").trim()
+);
+
+const logHistoryRouteMetric = (metric: string, meta: Record<string, unknown>) => {
+  if (!HISTORY_DEBUG_ENABLED) return;
+  console.debug(`[history-route] ${metric}`, meta);
+};
 
 const resolveBoundedPositiveInt = (params: {
   raw: string | null;
@@ -36,11 +48,13 @@ const resolveBoundedPositiveInt = (params: {
 };
 
 const resolveRawLimit = (raw: string | null): number =>
-  resolveBoundedPositiveInt({
-    raw,
-    fallback: DEFAULT_RAW_LIMIT,
-    max: MAX_RAW_LIMIT,
-  });
+  clampGatewayChatHistoryLimit(
+    resolveBoundedPositiveInt({
+      raw,
+      fallback: DEFAULT_RAW_LIMIT,
+      max: Number.MAX_SAFE_INTEGER,
+    })
+  ) ?? DEFAULT_RAW_LIMIT;
 
 const resolveTurnLimit = (raw: string | null): number =>
   resolveBoundedPositiveInt({
@@ -50,19 +64,13 @@ const resolveTurnLimit = (raw: string | null): number =>
   });
 
 const resolveScanLimit = (raw: string | null): number =>
-  resolveBoundedPositiveInt({
-    raw,
-    fallback: DEFAULT_SCAN_LIMIT,
-    max: MAX_SCAN_LIMIT,
-  });
-
-const resolveBeforeOutboxId = (raw: string | null, fallback: number): number => {
-  if (!raw) return fallback;
-  const parsed = Number(raw);
-  if (!Number.isFinite(parsed)) return fallback;
-  if (parsed <= 0) return fallback;
-  return Math.min(Math.floor(parsed), fallback);
-};
+  clampGatewayChatHistoryLimit(
+    resolveBoundedPositiveInt({
+      raw,
+      fallback: DEFAULT_SCAN_LIMIT,
+      max: Number.MAX_SAFE_INTEGER,
+    })
+  ) ?? DEFAULT_SCAN_LIMIT;
 
 const resolveView = (raw: string | null): HistoryView => {
   const normalized = (raw ?? "").trim().toLowerCase();
@@ -71,28 +79,44 @@ const resolveView = (raw: string | null): HistoryView => {
   return "semantic";
 };
 
-const resolveNextBeforeOutboxId = (params: {
-  hasMore: boolean;
-  beforeOutboxId: number;
-  backfillIncomplete: boolean;
-  entries: ControlPlaneOutboxEntry[];
-  fallbackEntries: ControlPlaneOutboxEntry[];
-}): number | null => {
-  if (!params.hasMore) return null;
-  if (params.backfillIncomplete) {
-    return params.beforeOutboxId;
+const asRecord = (value: unknown): Record<string, unknown> | null => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
   }
-  const candidate = params.entries[0]?.id ?? params.fallbackEntries[0]?.id ?? null;
-  if (typeof candidate !== "number" || !Number.isFinite(candidate)) return null;
-  if (candidate <= 0) return null;
-  if (candidate >= params.beforeOutboxId) return null;
-  return Math.floor(candidate);
+  return value as Record<string, unknown>;
+};
+
+const mapGatewayError = (error: unknown): NextResponse => {
+  if (error instanceof ControlPlaneGatewayError) {
+    if (error.code.trim().toUpperCase() === "GATEWAY_UNAVAILABLE") {
+      return NextResponse.json(
+        {
+          error: error.message,
+          code: "GATEWAY_UNAVAILABLE",
+          reason: "gateway_unavailable",
+        },
+        { status: 503 }
+      );
+    }
+    return NextResponse.json(
+      {
+        error: error.message,
+        code: error.code,
+        details: error.details,
+      },
+      { status: 400 }
+    );
+  }
+
+  const message = error instanceof Error ? error.message : "runtime_read_failed";
+  return NextResponse.json({ error: message }, { status: 500 });
 };
 
 export async function GET(
   request: Request,
   context: { params: Promise<{ agentId: string }> }
 ) {
+  const routeStartedAt = Date.now();
   const bootstrap = await bootstrapDomainRuntime();
   if (bootstrap.kind === "mode-disabled") {
     return NextResponse.json({ enabled: false, error: "domain_api_mode_disabled" }, { status: 404 });
@@ -117,95 +141,81 @@ export async function GET(
   const startError = bootstrap.kind === "start-failed" ? bootstrap.message : null;
 
   const url = new URL(request.url);
+  const sessionKeyRaw = (url.searchParams.get("sessionKey") ?? "").trim();
+  const sessionKey = sessionKeyRaw || `agent:${normalizedAgentId}:main`;
   const view = resolveView(url.searchParams.get("view"));
   const limit = resolveRawLimit(url.searchParams.get("limit"));
   const turnLimit = resolveTurnLimit(url.searchParams.get("turnLimit"));
   const scanLimit = resolveScanLimit(url.searchParams.get("scanLimit"));
   const snapshot = controlPlane.snapshot();
-  const beforeOutboxId = resolveBeforeOutboxId(
-    url.searchParams.get("beforeOutboxId"),
-    snapshot.outboxHead + 1
-  );
 
-  const loadWindowWithBackfill = (
-    targetLimit: number
-  ): {
-    entries: ControlPlaneOutboxEntry[];
-    hasMore: boolean;
-    backfillIncomplete: boolean;
-  } => {
-    let results = controlPlane.eventsBeforeForAgent(
-      normalizedAgentId,
-      beforeOutboxId,
-      targetLimit + 1
-    );
-    let backfillIncomplete = false;
-    if (results.length <= targetLimit) {
-      for (let attempt = 0; attempt < MAX_BACKFILL_BATCHES_PER_REQUEST; attempt += 1) {
-        const backfill = controlPlane.backfillAgentHistoryIndex(
-          beforeOutboxId,
-          BACKFILL_BATCH_LIMIT
-        );
-        if (backfill.scannedRows === 0) {
-          backfillIncomplete = false;
-          break;
-        }
-        backfillIncomplete = !backfill.exhausted;
-        results = controlPlane.eventsBeforeForAgent(
-          normalizedAgentId,
-          beforeOutboxId,
-          targetLimit + 1
-        );
-        if (results.length > targetLimit || backfill.exhausted) {
-          break;
-        }
-      }
-    }
-    const hasMore = results.length > targetLimit || backfillIncomplete;
-    const entries =
-      results.length > targetLimit ? results.slice(results.length - targetLimit) : results;
-    return { entries, hasMore, backfillIncomplete };
-  };
+  const gatewayLimit = view === "semantic" ? scanLimit : limit;
+  const gatewayCapped = gatewayLimit >= GATEWAY_CHAT_HISTORY_MAX_LIMIT;
 
-  let entries: ControlPlaneOutboxEntry[] = [];
+  let messages: SemanticHistoryMessage[] = [];
+  const gatewayStartedAt = Date.now();
+  try {
+    const history = await controlPlane.callGateway<GatewayChatHistoryPayload>("chat.history", {
+      sessionKey,
+      limit: gatewayLimit,
+    });
+    const rawMessages = Array.isArray(history?.messages) ? history.messages : [];
+    messages = rawMessages
+      .map((message) => asRecord(message))
+      .filter((message): message is SemanticHistoryMessage => message !== null);
+  } catch (error) {
+    return mapGatewayError(error);
+  }
+  const gatewayDurationMs = Date.now() - gatewayStartedAt;
+
+  const hasMoreBefore = messages.length >= gatewayLimit;
+  let selectedMessages: SemanticHistoryMessage[] = [];
   let hasMore = false;
-  let nextBeforeOutboxId: number | null = null;
   let semanticTurnsIncluded = 0;
-  let activeRun = resolveActiveRunFromEntries([], false);
   let windowTruncated = false;
 
   if (view === "semantic") {
-    const scanned = loadWindowWithBackfill(scanLimit);
     const semanticWindow = selectSemanticHistoryWindow({
-      entries: scanned.entries,
+      messages,
       turnLimit,
-      hasMoreBefore: scanned.hasMore,
+      hasMoreBefore,
     });
-    entries = semanticWindow.entries;
+    selectedMessages = semanticWindow.messages;
     hasMore = semanticWindow.windowTruncated;
     semanticTurnsIncluded = semanticWindow.semanticTurnsIncluded;
-    activeRun = semanticWindow.activeRun;
     windowTruncated = semanticWindow.windowTruncated;
-    nextBeforeOutboxId = resolveNextBeforeOutboxId({
-      hasMore,
-      beforeOutboxId,
-      backfillIncomplete: scanned.backfillIncomplete,
-      entries,
-      fallbackEntries: scanned.entries,
-    });
   } else {
-    const rawWindow = loadWindowWithBackfill(limit);
-    entries = rawWindow.entries;
-    hasMore = rawWindow.hasMore;
-    semanticTurnsIncluded = countSemanticTurns(entries);
-    activeRun = resolveActiveRunFromEntries(entries, hasMore);
+    selectedMessages = messages;
+    hasMore = hasMoreBefore;
+    semanticTurnsIncluded = countSemanticTurns(selectedMessages);
     windowTruncated = hasMore;
-    nextBeforeOutboxId = resolveNextBeforeOutboxId({
+  }
+
+  if (HISTORY_DEBUG_ENABLED) {
+    const payloadBytes = (() => {
+      try {
+        return JSON.stringify(selectedMessages).length;
+      } catch {
+        return 0;
+      }
+    })();
+    logHistoryRouteMetric("history_window", {
+      agentId: normalizedAgentId,
+      sessionKey,
+      view,
+      turnLimit,
+      limit,
+      scanLimit,
+      gatewayLimit,
+      gatewayCapped,
+      gatewayMessageCount: messages.length,
+      selectedMessageCount: selectedMessages.length,
+      payloadBytes,
       hasMore,
-      beforeOutboxId,
-      backfillIncomplete: rawWindow.backfillIncomplete,
-      entries,
-      fallbackEntries: entries,
+      windowTruncated,
+      semanticTurnsIncluded,
+      gatewayDurationMs,
+      routeDurationMs: Date.now() - routeStartedAt,
     });
   }
 
@@ -214,12 +224,12 @@ export async function GET(
     agentId: normalizedAgentId,
     ...(startError ? { error: startError } : {}),
     view,
-    entries,
+    messages: selectedMessages,
     hasMore,
-    nextBeforeOutboxId,
     semanticTurnsIncluded,
-    activeRun,
     windowTruncated,
+    gatewayLimit,
+    gatewayCapped,
     freshness: deriveRuntimeFreshness(snapshot, null),
   });
 }

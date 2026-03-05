@@ -117,7 +117,6 @@ export const planRuntimeChatEvent = (
     assistantCompletionAt,
     finalAssistantText,
     hasThinkingStarted,
-    hasTraceInOutput,
     isThinkingDebugSessionSeen,
     thinkingStartedAtMs,
   } = input;
@@ -140,7 +139,6 @@ export const planRuntimeChatEvent = (
       hasThinkingStarted,
       isClosedRun: false,
       isStaleTerminal: false,
-      shouldRequestHistoryRefresh: false,
       shouldUpdateLastResult: false,
       shouldSetRunIdle: false,
       shouldSetRunError: false,
@@ -170,12 +168,6 @@ export const planRuntimeChatEvent = (
     return { commands };
   }
 
-  const shouldRequestHistoryRefresh =
-    payload.state === "final" &&
-    !nextThinking &&
-    role === "assistant" &&
-    Boolean(agent) &&
-    !hasTraceInOutput;
   const shouldUpdateLastResult =
     payload.state === "final" && !isToolRole && typeof finalAssistantText === "string";
   const shouldQueueLatestUpdate =
@@ -225,7 +217,6 @@ export const planRuntimeChatEvent = (
     hasThinkingStarted,
     isClosedRun: false,
     isStaleTerminal: chatTerminalDecision?.isStaleTerminal ?? false,
-    shouldRequestHistoryRefresh,
     shouldUpdateLastResult,
     shouldSetRunIdle:
       payload.state === "aborted"

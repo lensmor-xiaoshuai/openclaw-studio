@@ -588,6 +588,7 @@ const AgentChatTranscript = memo(function AgentChatTranscript({
   avatarUrl,
   status,
   historyMaybeTruncated,
+  historyGatewayCapReached,
   historyFetchedCount,
   onLoadMoreHistory,
   chatItems,
@@ -609,6 +610,7 @@ const AgentChatTranscript = memo(function AgentChatTranscript({
   avatarUrl: string | null;
   status: AgentRecord["status"];
   historyMaybeTruncated: boolean;
+  historyGatewayCapReached: boolean;
   historyFetchedCount: number | null;
   onLoadMoreHistory: () => void;
   chatItems: AgentChatItem[];
@@ -751,13 +753,19 @@ const AgentChatTranscript = memo(function AgentChatTranscript({
               <div className="type-meta min-w-0 truncate font-mono text-muted-foreground">
                 Showing latest {typeof historyFetchedCount === "number" ? historyFetchedCount : "?"} turns
               </div>
-              <button
-                type="button"
-                className="shrink-0 rounded-md border border-border/70 bg-surface-3 px-3 py-1.5 font-mono text-[12px] font-medium tracking-[0.02em] text-foreground transition hover:bg-surface-2"
-                onClick={onLoadMoreHistory}
-              >
-                Load more
-              </button>
+              {historyGatewayCapReached ? (
+                <div className="type-meta shrink-0 font-mono text-muted-foreground">
+                  Showing latest retrievable history
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  className="shrink-0 rounded-md border border-border/70 bg-surface-3 px-3 py-1.5 font-mono text-[12px] font-medium tracking-[0.02em] text-foreground transition hover:bg-surface-2"
+                  onClick={onLoadMoreHistory}
+                >
+                  Load more
+                </button>
+              )}
             </div>
           ) : null}
           {!hasTranscriptContent ? (
@@ -1520,6 +1528,7 @@ export const AgentChatPanel = ({
           avatarUrl={agent.avatarUrl ?? null}
           status={agent.status}
           historyMaybeTruncated={agent.historyMaybeTruncated}
+          historyGatewayCapReached={agent.historyGatewayCapReached ?? false}
           historyFetchedCount={agent.historyFetchedCount}
           onLoadMoreHistory={onLoadMoreHistory}
           chatItems={visibleChatItems}

@@ -258,7 +258,7 @@ describe("runtime chat event workflow", () => {
     });
   });
 
-  it("plans missing-thinking diagnostics and history refresh for assistant final", () => {
+  it("plans missing-thinking diagnostics without forcing history refresh", () => {
     const result = planRuntimeChatEvent(
       createInput({
         payload: createPayload({ state: "final", seq: 1 }),
@@ -281,11 +281,9 @@ describe("runtime chat event workflow", () => {
 
     const policy = findCommand(result.commands, "applyPolicyIntents");
     expect(policy).toBeDefined();
-    expect(findIntent(policy?.intents ?? [], "requestHistoryRefresh")).toEqual({
-      kind: "requestHistoryRefresh",
-      agentId: "agent-1",
-      reason: "chat-final-no-trace",
-    });
+    expect((policy?.intents ?? []).some((intent) => intent.kind === "queueLatestUpdate")).toBe(
+      false
+    );
   });
 
   it("plans aborted output command and policy intents", () => {

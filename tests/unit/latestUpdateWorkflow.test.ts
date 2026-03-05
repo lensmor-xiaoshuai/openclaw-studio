@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  buildLatestUpdateTriggerMarker,
   buildLatestUpdatePatch,
   resolveLatestUpdateIntent,
   resolveLatestUpdateKind,
@@ -67,5 +68,28 @@ describe("latestUpdateWorkflow", () => {
       latestOverride: "Heartbeat is healthy.",
       latestOverrideKind: "heartbeat",
     });
+  });
+
+  it("builds trigger markers that refresh heartbeat/cron prompts when assistant completion time changes", () => {
+    expect(
+      buildLatestUpdateTriggerMarker({
+        message: "plain prompt",
+        lastAssistantMessageAt: 1700000000000,
+      })
+    ).toBe("plain prompt");
+
+    expect(
+      buildLatestUpdateTriggerMarker({
+        message: "heartbeat please",
+        lastAssistantMessageAt: 1700000000000,
+      })
+    ).toBe("heartbeat please:1700000000000");
+
+    expect(
+      buildLatestUpdateTriggerMarker({
+        message: "cron report",
+        lastAssistantMessageAt: null,
+      })
+    ).toBe("cron report:");
   });
 });

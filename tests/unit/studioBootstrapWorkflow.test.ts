@@ -228,7 +228,6 @@ describe("studioBootstrapWorkflow", () => {
         hasRestartingMutationBlock: false,
         hasCreateAgentBlock: false,
         gatewayUrl: "https://gateway.test",
-        useDomainApiMode: true,
         lastCompletedKey: null,
         inFlightKey: null,
       })
@@ -244,7 +243,6 @@ describe("studioBootstrapWorkflow", () => {
         hasRestartingMutationBlock: false,
         hasCreateAgentBlock: false,
         gatewayUrl: "https://gateway.test",
-        useDomainApiMode: true,
         lastCompletedKey: "domain:https://gateway.test",
         inFlightKey: null,
       })
@@ -260,7 +258,6 @@ describe("studioBootstrapWorkflow", () => {
         hasRestartingMutationBlock: false,
         hasCreateAgentBlock: false,
         gatewayUrl: "https://gateway.test",
-        useDomainApiMode: true,
         lastCompletedKey: null,
         inFlightKey: "domain:https://gateway.test",
       })

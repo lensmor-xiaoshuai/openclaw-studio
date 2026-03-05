@@ -153,7 +153,6 @@ export function planStartupFleetBootstrapIntent(params: {
   hasRestartingMutationBlock: boolean;
   hasCreateAgentBlock: boolean;
   gatewayUrl: string;
-  useDomainApiMode: boolean;
   lastCompletedKey: string | null;
   inFlightKey: string | null;
 }): StartupFleetBootstrapIntent {
@@ -174,7 +173,7 @@ export function planStartupFleetBootstrapIntent(params: {
   if (!normalizedGatewayUrl) {
     return { kind: "skip", reason: "not-connected" };
   }
-  const key = `${params.useDomainApiMode ? "domain" : "gateway"}:${normalizedGatewayUrl}`;
+  const key = `domain:${normalizedGatewayUrl}`;
   if (params.inFlightKey === key) {
     return { kind: "skip", reason: "in-flight" };
   }

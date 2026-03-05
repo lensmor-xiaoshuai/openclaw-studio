@@ -2,10 +2,15 @@ import { describe, expect, it, vi } from "vitest";
 
 import { buildLatestUpdatePatch } from "@/features/agents/operations/latestUpdateWorkflow";
 import { createSpecialLatestUpdateOperation } from "@/features/agents/operations/specialLatestUpdateOperation";
-import { resolveLatestCronJobForAgent, type CronJobSummary } from "@/lib/cron/types";
 import type { AgentState } from "@/features/agents/state/store";
+import { resolveLatestCronJobForAgent, type CronJobSummary } from "@/lib/cron/types";
+import type { DomainAgentHistoryResult } from "@/lib/controlplane/domain-runtime-client";
 
-const makeAgent = (overrides?: Partial<Pick<AgentState, "agentId" | "sessionKey" | "latestOverride" | "latestOverrideKind">>) => {
+const makeAgent = (
+  overrides?: Partial<
+    Pick<AgentState, "agentId" | "sessionKey" | "latestOverride" | "latestOverrideKind">
+  >
+) => {
   return {
     agentId: "agent-1",
     sessionKey: "agent:agent-1:main",
@@ -15,14 +20,26 @@ const makeAgent = (overrides?: Partial<Pick<AgentState, "agentId" | "sessionKey"
   } as unknown as AgentState;
 };
 
+const makeHistoryResult = (messages: Record<string, unknown>[]): DomainAgentHistoryResult => ({
+  enabled: true,
+  agentId: "agent-1",
+  view: "raw",
+  messages,
+  hasMore: false,
+  semanticTurnsIncluded: messages.length,
+  windowTruncated: false,
+  gatewayLimit: 200,
+  gatewayCapped: false,
+});
+
 describe("specialLatestUpdateOperation", () => {
   it("dispatches reset patch when intent resolves to reset", async () => {
     const agent = makeAgent({ latestOverrideKind: "cron" });
 
     const dispatchUpdateAgent = vi.fn();
     const operation = createSpecialLatestUpdateOperation({
-      callGateway: async () => {
-        throw new Error("callGateway should not be invoked for reset intent");
+      loadAgentHistoryWindow: async () => {
+        throw new Error("loadAgentHistoryWindow should not be invoked for reset intent");
       },
       listCronJobs: async () => ({ jobs: [] }),
       resolveCronJobForAgent: () => null,
@@ -38,33 +55,20 @@ describe("specialLatestUpdateOperation", () => {
     expect(dispatchUpdateAgent).toHaveBeenCalledWith(agent.agentId, buildLatestUpdatePatch(""));
   });
 
-  it("selects heartbeat session, reads history, and stores last assistant response after a heartbeat prompt", async () => {
+  it("reads raw domain history and stores latest assistant response after heartbeat prompt", async () => {
     const agent = makeAgent();
 
-    const callGateway = vi.fn(async (method: string) => {
-      if (method === "sessions.list") {
-        return {
-          sessions: [
-            { key: "agent:agent-1:main", updatedAt: 200, origin: { label: "main" } },
-            { key: "agent:agent-1:hb", updatedAt: 100, origin: { label: "Heartbeat" } },
-          ],
-        };
-      }
-      if (method === "chat.history") {
-        return {
-          messages: [
-            { role: "user", content: "Read HEARTBEAT.md if it exists" },
-            { role: "assistant", content: "First response" },
-            { role: "assistant", content: "Second response" },
-          ],
-        };
-      }
-      throw new Error(`Unhandled gateway method: ${method}`);
-    });
+    const loadAgentHistoryWindow = vi.fn(async () =>
+      makeHistoryResult([
+        { role: "user", content: "Read HEARTBEAT.md if it exists" },
+        { role: "assistant", content: "First response" },
+        { role: "assistant", content: "Second response" },
+      ])
+    );
 
     const dispatchUpdateAgent = vi.fn();
     const operation = createSpecialLatestUpdateOperation({
-      callGateway,
+      loadAgentHistoryWindow,
       listCronJobs: async () => ({ jobs: [] }),
       resolveCronJobForAgent: () => null,
       formatCronJobDisplay: () => "",
@@ -75,8 +79,13 @@ describe("specialLatestUpdateOperation", () => {
 
     await operation.update(agent.agentId, agent, "heartbeat please");
 
-    expect(callGateway).toHaveBeenCalledWith("sessions.list", expect.anything());
-    expect(callGateway).toHaveBeenCalledWith("chat.history", expect.anything());
+    expect(loadAgentHistoryWindow).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agentId: "agent-1",
+        sessionKey: "agent:agent-1:main",
+        view: "raw",
+      })
+    );
     expect(dispatchUpdateAgent).toHaveBeenCalledWith(
       agent.agentId,
       buildLatestUpdatePatch("Second response", "heartbeat")
@@ -115,8 +124,8 @@ describe("specialLatestUpdateOperation", () => {
 
     const dispatchUpdateAgent = vi.fn();
     const operation = createSpecialLatestUpdateOperation({
-      callGateway: async () => {
-        throw new Error("callGateway should not be invoked for cron intent");
+      loadAgentHistoryWindow: async () => {
+        throw new Error("loadAgentHistoryWindow should not be invoked for cron intent");
       },
       listCronJobs: async () => ({ jobs }),
       resolveCronJobForAgent: resolveLatestCronJobForAgent,
@@ -137,29 +146,15 @@ describe("specialLatestUpdateOperation", () => {
   it("dedupes concurrent updates for same agentId while first is in flight", async () => {
     const agent = makeAgent();
 
-    let resolveSessions!: (value: unknown) => void;
-    const sessionsPromise = new Promise<unknown>((resolve) => {
-      resolveSessions = resolve;
+    let resolveHistory!: (value: DomainAgentHistoryResult) => void;
+    const historyPromise = new Promise<DomainAgentHistoryResult>((resolve) => {
+      resolveHistory = resolve;
     });
 
-    const callGateway = vi.fn((method: string) => {
-      if (method === "sessions.list") {
-        return sessionsPromise;
-      }
-      if (method === "chat.history") {
-        return Promise.resolve({
-          messages: [
-            { role: "user", content: "Read HEARTBEAT.md if it exists" },
-            { role: "assistant", content: "ok" },
-          ],
-        });
-      }
-      return Promise.reject(new Error(`Unhandled gateway method: ${method}`));
-    });
-
+    const loadAgentHistoryWindow = vi.fn(() => historyPromise);
     const dispatchUpdateAgent = vi.fn();
     const operation = createSpecialLatestUpdateOperation({
-      callGateway,
+      loadAgentHistoryWindow,
       listCronJobs: async () => ({ jobs: [] }),
       resolveCronJobForAgent: () => null,
       formatCronJobDisplay: () => "",
@@ -172,16 +167,17 @@ describe("specialLatestUpdateOperation", () => {
     const second = operation.update(agent.agentId, agent, "heartbeat please");
     await second;
 
-    expect(callGateway).toHaveBeenCalledTimes(1);
-    expect(callGateway).toHaveBeenCalledWith("sessions.list", expect.anything());
+    expect(loadAgentHistoryWindow).toHaveBeenCalledTimes(1);
 
-    resolveSessions({
-      sessions: [{ key: "agent:agent-1:hb", updatedAt: 1, origin: { label: "heartbeat" } }],
-    });
+    resolveHistory(
+      makeHistoryResult([
+        { role: "user", content: "Read HEARTBEAT.md if it exists" },
+        { role: "assistant", content: "ok" },
+      ])
+    );
     await first;
 
-    expect(callGateway).toHaveBeenCalledTimes(2);
-    expect(callGateway).toHaveBeenCalledWith("chat.history", expect.anything());
+    expect(loadAgentHistoryWindow).toHaveBeenCalledTimes(1);
     expect(dispatchUpdateAgent).toHaveBeenCalledWith(
       agent.agentId,
       buildLatestUpdatePatch("ok", "heartbeat")

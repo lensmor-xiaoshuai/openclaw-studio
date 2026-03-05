@@ -62,19 +62,14 @@ describe("gateway runtime event handler (chat)", () => {
     const queueLivePatch = vi.fn();
 
     const handler = createGatewayRuntimeEventHandler({
-      getStatus: () => "connected",
       getAgents: () => agents,
       dispatch,
       queueLivePatch,
       clearPendingLivePatch: vi.fn(),
       now: () => 1000,
-      loadSummarySnapshot: vi.fn(async () => {}),
       requestHistoryRefresh: vi.fn(async () => {}),
-      refreshHeartbeatLatestUpdate: vi.fn(),
-      bumpHeartbeatTick: vi.fn(),
       setTimeout: (fn, ms) => setTimeout(fn, ms) as unknown as number,
       clearTimeout: (id) => clearTimeout(id as unknown as NodeJS.Timeout),
-      isDisconnectLikeError: () => false,
       logWarn: vi.fn(),
       updateSpecialLatestUpdate: vi.fn(),
     });
@@ -108,19 +103,14 @@ describe("gateway runtime event handler (chat)", () => {
     const dispatch = vi.fn();
 
     const handler = createGatewayRuntimeEventHandler({
-      getStatus: () => "connected",
       getAgents: () => agents,
       dispatch,
       queueLivePatch,
       clearPendingLivePatch: vi.fn(),
       now: () => 1000,
-      loadSummarySnapshot: vi.fn(async () => {}),
       requestHistoryRefresh: vi.fn(async () => {}),
-      refreshHeartbeatLatestUpdate: vi.fn(),
-      bumpHeartbeatTick: vi.fn(),
       setTimeout: (fn, ms) => setTimeout(fn, ms) as unknown as number,
       clearTimeout: (id) => clearTimeout(id as unknown as NodeJS.Timeout),
-      isDisconnectLikeError: () => false,
       logWarn: vi.fn(),
       updateSpecialLatestUpdate: vi.fn(),
     });
@@ -148,19 +138,14 @@ describe("gateway runtime event handler (chat)", () => {
     });
 
     const handler = createGatewayRuntimeEventHandler({
-      getStatus: () => "connected",
       getAgents: () => agents,
       dispatch,
       queueLivePatch,
       clearPendingLivePatch: vi.fn(),
       now: () => 1000,
-      loadSummarySnapshot: vi.fn(async () => {}),
       requestHistoryRefresh: vi.fn(async () => {}),
-      refreshHeartbeatLatestUpdate: vi.fn(),
-      bumpHeartbeatTick: vi.fn(),
       setTimeout: (fn, ms) => setTimeout(fn, ms) as unknown as number,
       clearTimeout: (id) => clearTimeout(id as unknown as NodeJS.Timeout),
-      isDisconnectLikeError: () => false,
       logWarn: vi.fn(),
       updateSpecialLatestUpdate: vi.fn(),
     });
@@ -203,19 +188,14 @@ describe("gateway runtime event handler (chat)", () => {
     ];
     const queueLivePatch = vi.fn();
     const handler = createGatewayRuntimeEventHandler({
-      getStatus: () => "connected",
       getAgents: () => agents,
       dispatch: vi.fn(),
       queueLivePatch,
       clearPendingLivePatch: vi.fn(),
       now: () => 1000,
-      loadSummarySnapshot: vi.fn(async () => {}),
       requestHistoryRefresh: vi.fn(async () => {}),
-      refreshHeartbeatLatestUpdate: vi.fn(),
-      bumpHeartbeatTick: vi.fn(),
       setTimeout: (fn, ms) => setTimeout(fn, ms) as unknown as number,
       clearTimeout: (id) => clearTimeout(id as unknown as NodeJS.Timeout),
-      isDisconnectLikeError: () => false,
       logWarn: vi.fn(),
       updateSpecialLatestUpdate: vi.fn(),
     });
@@ -252,19 +232,14 @@ describe("gateway runtime event handler (chat)", () => {
     const clearPendingLivePatch = vi.fn();
 
     const handler = createGatewayRuntimeEventHandler({
-      getStatus: () => "connected",
       getAgents: () => agents,
       dispatch,
       queueLivePatch: vi.fn(),
       clearPendingLivePatch,
       now: () => 1000,
-      loadSummarySnapshot: vi.fn(async () => {}),
       requestHistoryRefresh: vi.fn(async () => {}),
-      refreshHeartbeatLatestUpdate: vi.fn(),
-      bumpHeartbeatTick: vi.fn(),
       setTimeout: (fn, ms) => setTimeout(fn, ms) as unknown as number,
       clearTimeout: (id) => clearTimeout(id as unknown as NodeJS.Timeout),
-      isDisconnectLikeError: () => false,
       logWarn: vi.fn(),
       updateSpecialLatestUpdate,
     });
@@ -329,19 +304,14 @@ describe("gateway runtime event handler (chat)", () => {
     const updateSpecialLatestUpdate = vi.fn();
 
     const handler = createGatewayRuntimeEventHandler({
-      getStatus: () => "connected",
       getAgents,
       dispatch: vi.fn(),
       queueLivePatch: vi.fn(),
       clearPendingLivePatch: vi.fn(),
       now: () => 1000,
-      loadSummarySnapshot: vi.fn(async () => {}),
       requestHistoryRefresh: vi.fn(async () => {}),
-      refreshHeartbeatLatestUpdate: vi.fn(),
-      bumpHeartbeatTick: vi.fn(),
       setTimeout: (fn, ms) => setTimeout(fn, ms) as unknown as number,
       clearTimeout: (id) => clearTimeout(id as unknown as NodeJS.Timeout),
-      isDisconnectLikeError: () => false,
       logWarn: vi.fn(),
       updateSpecialLatestUpdate,
     });
@@ -368,7 +338,6 @@ describe("gateway runtime event handler (chat)", () => {
       "\n"
     );
     const handler = createGatewayRuntimeEventHandler({
-      getStatus: () => "connected",
       getAgents: () => agents,
       dispatch: vi.fn((action) => {
         dispatched.push(action as never);
@@ -376,13 +345,9 @@ describe("gateway runtime event handler (chat)", () => {
       queueLivePatch: vi.fn(),
       clearPendingLivePatch: vi.fn(),
       now: () => 1000,
-      loadSummarySnapshot: vi.fn(async () => {}),
       requestHistoryRefresh: vi.fn(async () => {}),
-      refreshHeartbeatLatestUpdate: vi.fn(),
-      bumpHeartbeatTick: vi.fn(),
       setTimeout: (fn, ms) => setTimeout(fn, ms) as unknown as number,
       clearTimeout: (id) => clearTimeout(id as unknown as NodeJS.Timeout),
-      isDisconnectLikeError: () => false,
       logWarn: vi.fn(),
       updateSpecialLatestUpdate: vi.fn(),
     });
@@ -415,25 +380,20 @@ describe("gateway runtime event handler (chat)", () => {
     ).toBe(true);
   });
 
-  it("requests history refresh through boundary command only when final assistant arrives without trace lines", () => {
+  it("does not request history refresh when final assistant arrives without trace lines", () => {
     vi.useFakeTimers();
     try {
       const agents = [createAgent({ outputLines: [] })];
       const requestHistoryRefresh = vi.fn(async () => {});
       const handler = createGatewayRuntimeEventHandler({
-        getStatus: () => "connected",
         getAgents: () => agents,
         dispatch: vi.fn(),
         queueLivePatch: vi.fn(),
         clearPendingLivePatch: vi.fn(),
         now: () => 1000,
-        loadSummarySnapshot: vi.fn(async () => {}),
         requestHistoryRefresh,
-        refreshHeartbeatLatestUpdate: vi.fn(),
-        bumpHeartbeatTick: vi.fn(),
         setTimeout: (fn, ms) => setTimeout(fn, ms) as unknown as number,
         clearTimeout: (id) => clearTimeout(id as unknown as NodeJS.Timeout),
-        isDisconnectLikeError: () => false,
         logWarn: vi.fn(),
         updateSpecialLatestUpdate: vi.fn(),
       });
@@ -451,11 +411,7 @@ describe("gateway runtime event handler (chat)", () => {
 
       expect(requestHistoryRefresh).not.toHaveBeenCalled();
       vi.runAllTimers();
-      expect(requestHistoryRefresh).toHaveBeenCalledTimes(1);
-      expect(requestHistoryRefresh).toHaveBeenCalledWith({
-        agentId: "agent-1",
-        reason: "chat-final-no-trace",
-      });
+      expect(requestHistoryRefresh).not.toHaveBeenCalled();
     } finally {
       vi.useRealTimers();
     }
@@ -480,19 +436,14 @@ describe("gateway runtime event handler (chat)", () => {
         dispatched.push(action as never);
       });
       const handler = createGatewayRuntimeEventHandler({
-        getStatus: () => "connected",
         getAgents: () => agents,
         dispatch,
         queueLivePatch: vi.fn(),
         clearPendingLivePatch: vi.fn(),
         now: () => 1000,
-        loadSummarySnapshot: vi.fn(async () => {}),
         requestHistoryRefresh: vi.fn(async () => {}),
-        refreshHeartbeatLatestUpdate: vi.fn(),
-        bumpHeartbeatTick: vi.fn(),
         setTimeout: (fn, ms) => setTimeout(fn, ms) as unknown as number,
         clearTimeout: (id) => clearTimeout(id as unknown as NodeJS.Timeout),
-        isDisconnectLikeError: () => false,
         logWarn: vi.fn(),
         updateSpecialLatestUpdate: vi.fn(),
       });
@@ -585,19 +536,14 @@ describe("gateway runtime event handler (chat)", () => {
         dispatched.push(action as never);
       });
       const handler = createGatewayRuntimeEventHandler({
-        getStatus: () => "connected",
         getAgents: () => agents,
         dispatch,
         queueLivePatch: vi.fn(),
         clearPendingLivePatch: vi.fn(),
         now: () => 1000,
-        loadSummarySnapshot: vi.fn(async () => {}),
         requestHistoryRefresh: vi.fn(async () => {}),
-        refreshHeartbeatLatestUpdate: vi.fn(),
-        bumpHeartbeatTick: vi.fn(),
         setTimeout: (fn, ms) => setTimeout(fn, ms) as unknown as number,
         clearTimeout: (id) => clearTimeout(id as unknown as NodeJS.Timeout),
-        isDisconnectLikeError: () => false,
         logWarn: vi.fn(),
         updateSpecialLatestUpdate: vi.fn(),
       });
@@ -698,19 +644,14 @@ describe("gateway runtime event handler (chat)", () => {
       dispatched.push(action as never);
     });
     const handler = createGatewayRuntimeEventHandler({
-      getStatus: () => "connected",
       getAgents: () => agents,
       dispatch,
       queueLivePatch: vi.fn(),
       clearPendingLivePatch: vi.fn(),
       now: () => 1000,
-      loadSummarySnapshot: vi.fn(async () => {}),
       requestHistoryRefresh: vi.fn(async () => {}),
-      refreshHeartbeatLatestUpdate: vi.fn(),
-      bumpHeartbeatTick: vi.fn(),
       setTimeout: (fn, ms) => setTimeout(fn, ms) as unknown as number,
       clearTimeout: (id) => clearTimeout(id as unknown as NodeJS.Timeout),
-      isDisconnectLikeError: () => false,
       logWarn: vi.fn(),
       updateSpecialLatestUpdate: vi.fn(),
     });
@@ -788,19 +729,14 @@ describe("gateway runtime event handler (chat)", () => {
     });
     const requestHistoryRefresh = vi.fn(async () => {});
     const handler = createGatewayRuntimeEventHandler({
-      getStatus: () => "connected",
       getAgents: () => agents,
       dispatch,
       queueLivePatch: vi.fn(),
       clearPendingLivePatch: vi.fn(),
       now: () => 1000,
-      loadSummarySnapshot: vi.fn(async () => {}),
       requestHistoryRefresh,
-      refreshHeartbeatLatestUpdate: vi.fn(),
-      bumpHeartbeatTick: vi.fn(),
       setTimeout: (fn, ms) => setTimeout(fn, ms) as unknown as number,
       clearTimeout: (id) => clearTimeout(id as unknown as NodeJS.Timeout),
-      isDisconnectLikeError: () => false,
       logWarn: vi.fn(),
       updateSpecialLatestUpdate: vi.fn(),
     });
@@ -837,19 +773,14 @@ describe("gateway runtime event handler (chat)", () => {
     ];
     const dispatch = vi.fn();
     const handler = createGatewayRuntimeEventHandler({
-      getStatus: () => "connected",
       getAgents: () => agents,
       dispatch,
       queueLivePatch: vi.fn(),
       clearPendingLivePatch: vi.fn(),
       now: () => 1000,
-      loadSummarySnapshot: vi.fn(async () => {}),
       requestHistoryRefresh: vi.fn(async () => {}),
-      refreshHeartbeatLatestUpdate: vi.fn(),
-      bumpHeartbeatTick: vi.fn(),
       setTimeout: (fn, ms) => setTimeout(fn, ms) as unknown as number,
       clearTimeout: (id) => clearTimeout(id as unknown as NodeJS.Timeout),
-      isDisconnectLikeError: () => false,
       logWarn: vi.fn(),
       updateSpecialLatestUpdate: vi.fn(),
     });
@@ -881,19 +812,14 @@ describe("gateway runtime event handler (chat)", () => {
     const agents = [createAgent({ status: "running", runId: "run-1", runStartedAt: 900 })];
     const dispatch = vi.fn();
     const handler = createGatewayRuntimeEventHandler({
-      getStatus: () => "connected",
       getAgents: () => agents,
       dispatch,
       queueLivePatch: vi.fn(),
       clearPendingLivePatch: vi.fn(),
       now: () => 1000,
-      loadSummarySnapshot: vi.fn(async () => {}),
       requestHistoryRefresh: vi.fn(async () => {}),
-      refreshHeartbeatLatestUpdate: vi.fn(),
-      bumpHeartbeatTick: vi.fn(),
       setTimeout: (fn, ms) => setTimeout(fn, ms) as unknown as number,
       clearTimeout: (id) => clearTimeout(id as unknown as NodeJS.Timeout),
-      isDisconnectLikeError: () => false,
       logWarn: vi.fn(),
       updateSpecialLatestUpdate: vi.fn(),
     });
@@ -922,19 +848,14 @@ describe("gateway runtime event handler (chat)", () => {
 
     const errorDispatch = vi.fn();
     const errorHandler = createGatewayRuntimeEventHandler({
-      getStatus: () => "connected",
       getAgents: () => agents,
       dispatch: errorDispatch,
       queueLivePatch: vi.fn(),
       clearPendingLivePatch: vi.fn(),
       now: () => 1000,
-      loadSummarySnapshot: vi.fn(async () => {}),
       requestHistoryRefresh: vi.fn(async () => {}),
-      refreshHeartbeatLatestUpdate: vi.fn(),
-      bumpHeartbeatTick: vi.fn(),
       setTimeout: (fn, ms) => setTimeout(fn, ms) as unknown as number,
       clearTimeout: (id) => clearTimeout(id as unknown as NodeJS.Timeout),
-      isDisconnectLikeError: () => false,
       logWarn: vi.fn(),
       updateSpecialLatestUpdate: vi.fn(),
     });
@@ -970,19 +891,14 @@ describe("gateway runtime event handler (chat)", () => {
       return runId === "run-1" && stopReason === "rpc";
     });
     const handler = createGatewayRuntimeEventHandler({
-      getStatus: () => "connected",
       getAgents: () => agents,
       dispatch,
       queueLivePatch: vi.fn(),
       clearPendingLivePatch: vi.fn(),
       now: () => 1000,
-      loadSummarySnapshot: vi.fn(async () => {}),
       requestHistoryRefresh: vi.fn(async () => {}),
-      refreshHeartbeatLatestUpdate: vi.fn(),
-      bumpHeartbeatTick: vi.fn(),
       setTimeout: (fn, ms) => setTimeout(fn, ms) as unknown as number,
       clearTimeout: (id) => clearTimeout(id as unknown as NodeJS.Timeout),
-      isDisconnectLikeError: () => false,
       logWarn: vi.fn(),
       shouldSuppressRunAbortedLine,
       updateSpecialLatestUpdate: vi.fn(),
@@ -1023,19 +939,14 @@ describe("gateway runtime event handler (chat)", () => {
     const agents = [createAgent({ status: "running", runId: "run-1", runStartedAt: 900 })];
     const queueLivePatch = vi.fn();
     const handler = createGatewayRuntimeEventHandler({
-      getStatus: () => "connected",
       getAgents: () => agents,
       dispatch: vi.fn(),
       queueLivePatch,
       clearPendingLivePatch: vi.fn(),
       now: () => 1000,
-      loadSummarySnapshot: vi.fn(async () => {}),
       requestHistoryRefresh: vi.fn(async () => {}),
-      refreshHeartbeatLatestUpdate: vi.fn(),
-      bumpHeartbeatTick: vi.fn(),
       setTimeout: (fn, ms) => setTimeout(fn, ms) as unknown as number,
       clearTimeout: (id) => clearTimeout(id as unknown as NodeJS.Timeout),
-      isDisconnectLikeError: () => false,
       logWarn: vi.fn(),
       updateSpecialLatestUpdate: vi.fn(),
     });

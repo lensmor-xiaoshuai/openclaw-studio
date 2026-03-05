@@ -12,7 +12,7 @@ describe("deriveHydrateAgentFleetResult", () => {
       gateway: null,
       focused: {},
       avatars: {
-        [gatewayUrl]: {
+        "ws://localhost:18789": {
           "agent-1": "persisted-seed",
         },
       },

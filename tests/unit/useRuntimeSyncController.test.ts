@@ -2,28 +2,24 @@ import { createElement, useEffect } from "react";
 import { act, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { RUNTIME_SYNC_MAX_HISTORY_LIMIT } from "@/features/agents/operations/runtimeSyncControlWorkflow";
 import { useRuntimeSyncController } from "@/features/agents/operations/useRuntimeSyncController";
 import type { AgentState } from "@/features/agents/state/store";
+import type { DomainAgentHistoryResult } from "@/lib/controlplane/domain-runtime-client";
 
-import {
-  executeAgentReconcileCommands,
-  runAgentReconcileOperation,
-} from "@/features/agents/operations/agentReconcileOperation";
-import {
-  executeHistorySyncCommands,
-  runHistorySyncOperation,
-} from "@/features/agents/operations/historySyncOperation";
-import type { GatewayGapInfo } from "@/lib/gateway/GatewayClient";
+import { hydrateDomainHistoryWindow } from "@/features/agents/operations/domainHistoryHydration";
+import { loadDomainAgentHistoryWindow } from "@/lib/controlplane/domain-runtime-client";
+import { fetchJson } from "@/lib/http";
 
-vi.mock("@/features/agents/operations/historySyncOperation", () => ({
-  runHistorySyncOperation: vi.fn(async () => []),
-  executeHistorySyncCommands: vi.fn(),
+vi.mock("@/features/agents/operations/domainHistoryHydration", () => ({
+  hydrateDomainHistoryWindow: vi.fn(),
 }));
 
-vi.mock("@/features/agents/operations/agentReconcileOperation", () => ({
-  runAgentReconcileOperation: vi.fn(async () => []),
-  executeAgentReconcileCommands: vi.fn(),
+vi.mock("@/lib/controlplane/domain-runtime-client", () => ({
+  loadDomainAgentHistoryWindow: vi.fn(),
+}));
+
+vi.mock("@/lib/http", () => ({
+  fetchJson: vi.fn(),
 }));
 
 const createAgent = (overrides?: Partial<AgentState>): AgentState => ({
@@ -53,6 +49,8 @@ const createAgent = (overrides?: Partial<AgentState>): AgentState => ({
   historyFetchLimit: null,
   historyFetchedCount: null,
   historyMaybeTruncated: false,
+  historyHasMore: false,
+  historyGatewayCapReached: false,
   toolCallingEnabled: true,
   showThinkingTraces: true,
   model: "openai/gpt-5",
@@ -66,61 +64,23 @@ type RuntimeSyncControllerValue = ReturnType<typeof useRuntimeSyncController>;
 
 type RenderControllerContext = {
   getValue: () => RuntimeSyncControllerValue;
-  rerenderWith: (
-    overrides: Partial<Parameters<typeof useRuntimeSyncController>[0]>
-  ) => void;
+  rerenderWith: (overrides: Partial<Parameters<typeof useRuntimeSyncController>[0]>) => void;
   unmount: () => void;
   dispatch: ReturnType<typeof vi.fn>;
-  clearRunTracking: ReturnType<typeof vi.fn>;
-  call: ReturnType<typeof vi.fn>;
-  onGap: ReturnType<typeof vi.fn>;
-  getGapHandler: () => ((info: GatewayGapInfo) => void) | null;
-  unsubscribeGap: ReturnType<typeof vi.fn>;
 };
 
 const renderController = (
   overrides?: Partial<Parameters<typeof useRuntimeSyncController>[0]>
 ): RenderControllerContext => {
   const dispatch = vi.fn();
-  const clearRunTracking = vi.fn();
-  const call = vi.fn(async (method: string) => {
-    if (method === "status") {
-      return { sessions: { recent: [], byAgent: [] } };
-    }
-    if (method === "sessions.preview") {
-      return { ts: 123, previews: [] };
-    }
-    return {};
-  });
-  let gapHandler: ((info: GatewayGapInfo) => void) | null = null;
-  const unsubscribeGap = vi.fn();
-  const onGap = vi.fn((handler: (info: GatewayGapInfo) => void) => {
-    gapHandler = handler;
-    return unsubscribeGap;
-  });
 
-  const currentParamsBase: Omit<
-    Parameters<typeof useRuntimeSyncController>[0],
-    "useDomainApiReads"
-  > = {
-    client: {
-      call,
-      onGap,
-    } as never,
-    status: "connected",
-    agents: [createAgent({ status: "running", historyLoadedAt: 1000, runId: "run-1" })],
-    focusedAgentId: null,
-    focusedAgentRunning: false,
-    dispatch,
-    clearRunTracking,
-    isDisconnectLikeError: () => false,
-    defaultHistoryLimit: 200,
-    maxHistoryLimit: 5000,
-    ...(overrides ?? {}),
-  };
   let currentParams: Parameters<typeof useRuntimeSyncController>[0] = {
-    ...currentParamsBase,
-    useDomainApiReads: overrides?.useDomainApiReads ?? false,
+    status: "connected",
+    agents: [createAgent({ historyLoadedAt: 1000 })],
+    focusedAgentId: null,
+    dispatch,
+    isDisconnectLikeError: () => false,
+    ...(overrides ?? {}),
   };
 
   const valueRef: { current: RuntimeSyncControllerValue | null } = { current: null };
@@ -159,7 +119,6 @@ const renderController = (
       currentParams = {
         ...currentParams,
         ...nextOverrides,
-        useDomainApiReads: nextOverrides.useDomainApiReads ?? currentParams.useDomainApiReads,
       };
       rendered.rerender(
         createElement(Probe, {
@@ -174,160 +133,61 @@ const renderController = (
       rendered.unmount();
     },
     dispatch,
-    clearRunTracking,
-    call,
-    onGap,
-    getGapHandler: () => gapHandler,
-    unsubscribeGap,
   };
 };
 
+const createHistoryResult = (): DomainAgentHistoryResult => ({
+  enabled: true,
+  agentId: "agent-1",
+  view: "semantic",
+  messages: [],
+  hasMore: false,
+  semanticTurnsIncluded: 0,
+  windowTruncated: false,
+  gatewayLimit: 200,
+  gatewayCapped: false,
+});
+
 describe("useRuntimeSyncController", () => {
-  const mockedRunHistorySyncOperation = vi.mocked(runHistorySyncOperation);
-  const mockedExecuteHistorySyncCommands = vi.mocked(executeHistorySyncCommands);
-  const mockedRunAgentReconcileOperation = vi.mocked(runAgentReconcileOperation);
-  const mockedExecuteAgentReconcileCommands = vi.mocked(executeAgentReconcileCommands);
+  const mockedLoadDomainAgentHistoryWindow = vi.mocked(loadDomainAgentHistoryWindow);
+  const mockedHydrateDomainHistoryWindow = vi.mocked(hydrateDomainHistoryWindow);
+  const mockedFetchJson = vi.mocked(fetchJson);
 
   beforeEach(() => {
-    vi.useFakeTimers();
-    mockedRunHistorySyncOperation.mockReset();
-    mockedRunHistorySyncOperation.mockResolvedValue([]);
-    mockedExecuteHistorySyncCommands.mockReset();
-    mockedRunAgentReconcileOperation.mockReset();
-    mockedRunAgentReconcileOperation.mockResolvedValue([]);
-    mockedExecuteAgentReconcileCommands.mockReset();
+    mockedLoadDomainAgentHistoryWindow.mockReset();
+    mockedHydrateDomainHistoryWindow.mockReset();
+    mockedFetchJson.mockReset();
+
+    mockedLoadDomainAgentHistoryWindow.mockResolvedValue(createHistoryResult());
+    mockedHydrateDomainHistoryWindow.mockReturnValue({ historyLoadedAt: 1000 });
+    mockedFetchJson.mockResolvedValue({ summary: {}, freshness: {} });
   });
 
   afterEach(() => {
-    vi.useRealTimers();
     vi.restoreAllMocks();
-    vi.unstubAllEnvs();
   });
 
-  it("runs reconcile immediately and every 3000ms while connected then cleans up", async () => {
-    const ctx = renderController({
-      focusedAgentId: null,
-      focusedAgentRunning: false,
-    });
-
-    await act(async () => {
-      await Promise.resolve();
-    });
-    expect(mockedRunAgentReconcileOperation).toHaveBeenCalledTimes(1);
-
-    await vi.advanceTimersByTimeAsync(2999);
-    expect(mockedRunAgentReconcileOperation).toHaveBeenCalledTimes(1);
-
-    await vi.advanceTimersByTimeAsync(1);
-    expect(mockedRunAgentReconcileOperation).toHaveBeenCalledTimes(2);
-
-    await vi.advanceTimersByTimeAsync(3000);
-    expect(mockedRunAgentReconcileOperation).toHaveBeenCalledTimes(3);
-
-    ctx.unmount();
-    await vi.advanceTimersByTimeAsync(6000);
-    expect(mockedRunAgentReconcileOperation).toHaveBeenCalledTimes(3);
-  });
-
-  it("polls focused running history every 4500ms and stops when focus no longer running", async () => {
-    const ctx = renderController({
-      agents: [createAgent({ status: "running", historyLoadedAt: 1234 })],
-      focusedAgentId: "agent-1",
-      focusedAgentRunning: true,
-    });
-
-    await act(async () => {
-      await Promise.resolve();
-    });
-    expect(mockedRunHistorySyncOperation).toHaveBeenCalledTimes(1);
-
-    await vi.advanceTimersByTimeAsync(4500);
-    expect(mockedRunHistorySyncOperation).toHaveBeenCalledTimes(2);
-
-    ctx.rerenderWith({
-      agents: [createAgent({ status: "idle", historyLoadedAt: 1234 })],
-      focusedAgentId: "agent-1",
-      focusedAgentRunning: false,
-    });
-
-    await vi.advanceTimersByTimeAsync(9000);
-    expect(mockedRunHistorySyncOperation).toHaveBeenCalledTimes(2);
-  });
-
-  it("bootstraps history only for connected sessions missing loaded history", async () => {
+  it("loads summary snapshot when connected", async () => {
     renderController({
       status: "connected",
+      agents: [createAgent({ historyLoadedAt: 1234 })],
       focusedAgentId: null,
-      focusedAgentRunning: false,
-      agents: [
-        createAgent({ agentId: "agent-1", sessionCreated: true, historyLoadedAt: null }),
-        createAgent({ agentId: "agent-2", sessionCreated: true, historyLoadedAt: 1234 }),
-        createAgent({ agentId: "agent-3", sessionCreated: false, historyLoadedAt: null }),
-      ],
     });
 
     await act(async () => {
       await Promise.resolve();
     });
 
-    const bootstrappedAgentIds = mockedRunHistorySyncOperation.mock.calls
-      .map(([arg]) => (arg as { agentId: string }).agentId)
-      .filter((agentId) => agentId === "agent-1" || agentId === "agent-2" || agentId === "agent-3");
-
-    expect(bootstrappedAgentIds).toContain("agent-1");
-    expect(bootstrappedAgentIds).not.toContain("agent-2");
-    expect(bootstrappedAgentIds).not.toContain("agent-3");
+    expect(mockedFetchJson).toHaveBeenCalledWith("/api/runtime/summary", {
+      cache: "no-store",
+    });
   });
 
-  it("in domain mode bootstraps focused missing history through chat-history only", async () => {
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url.includes("/api/runtime/summary")) {
-        return new Response(
-          JSON.stringify({
-            enabled: true,
-            summary: { status: "connected", reason: null, asOf: null, outboxHead: 0 },
-            freshness: { source: "controlplane", stale: false, asOf: null, reason: null },
-          }),
-          { status: 200, headers: { "Content-Type": "application/json" } }
-        );
-      }
-      if (url.includes("/api/runtime/chat-history")) {
-        return new Response(
-          JSON.stringify({
-            ok: true,
-            payload: {
-              sessionKey: "agent:agent-2:main",
-              messages: [],
-            },
-          }),
-          { status: 200, headers: { "Content-Type": "application/json" } }
-        );
-      }
-      return new Response(JSON.stringify({ enabled: true }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    });
-    vi.stubGlobal("fetch", fetchMock);
-
-    mockedRunHistorySyncOperation.mockImplementation(async (params) => {
-      await params.client.call("chat.history", {
-        sessionKey: "agent:agent-2:main",
-        limit: 50,
-      });
-      return [];
-    });
-
+  it("bootstraps focused agent history when connected and history is missing", async () => {
     renderController({
       status: "connected",
-      useDomainApiReads: true,
-      focusedAgentId: "agent-2",
-      focusedAgentRunning: false,
-      agents: [
-        createAgent({ agentId: "agent-1", sessionKey: "agent:agent-1:main", historyLoadedAt: null }),
-        createAgent({ agentId: "agent-2", sessionKey: "agent:agent-2:main", historyLoadedAt: null }),
-      ],
+      agents: [createAgent({ historyLoadedAt: null })],
+      focusedAgentId: "agent-1",
     });
 
     await act(async () => {
@@ -335,193 +195,144 @@ describe("useRuntimeSyncController", () => {
       await Promise.resolve();
     });
 
-    expect(mockedRunHistorySyncOperation).toHaveBeenCalledWith(
+    expect(mockedLoadDomainAgentHistoryWindow).toHaveBeenCalledWith(
       expect.objectContaining({
-        agentId: "agent-2",
+        agentId: "agent-1",
+        view: "semantic",
       })
     );
-    const chatHistoryCalls = fetchMock.mock.calls
-      .map((call) => String(call[0]))
-      .filter((url) => url.includes("/api/runtime/chat-history"));
-    expect(chatHistoryCalls.some((url) => url.includes("sessionKey=agent%3Aagent-2%3Amain"))).toBe(true);
-    const semanticCalls = fetchMock.mock.calls
-      .map((call) => String(call[0]))
-      .filter((url) => url.includes("/api/runtime/agents/"));
-    expect(semanticCalls.length).toBe(0);
-
-    vi.unstubAllGlobals();
   });
 
-  it("loads summary snapshot when status transitions to connected", async () => {
+  it("loads domain history, hydrates it, and dispatches update", async () => {
     const ctx = renderController({
       status: "disconnected",
+      agents: [createAgent({ historyLoadedAt: null })],
       focusedAgentId: null,
-      focusedAgentRunning: false,
-      agents: [createAgent({ sessionCreated: true, historyLoadedAt: 1234 })],
+      defaultHistoryLimit: 50,
+      maxHistoryLimit: 300,
     });
 
-    expect(ctx.call).not.toHaveBeenCalledWith("status", {});
-
-    ctx.rerenderWith({ status: "connected" });
-    await act(async () => {
-      await Promise.resolve();
-    });
-
-    expect(ctx.call).toHaveBeenCalledWith("status", {});
-    expect(ctx.call).toHaveBeenCalledWith("sessions.preview", {
-      keys: ["agent:agent-1:main"],
-      limit: 8,
-      maxChars: 240,
-    });
-  });
-
-  it("handles gap recovery by triggering summary refresh and reconcile", async () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const ctx = renderController({
-      agents: [createAgent({ status: "running", historyLoadedAt: 1234, runId: "run-1" })],
+    mockedHydrateDomainHistoryWindow.mockReturnValue({
+      outputLines: ["restored"],
+      historyLoadedAt: 555,
     });
 
     await act(async () => {
-      await Promise.resolve();
+      await ctx.getValue().loadAgentHistory("agent-1", { limit: 500, reason: "refresh" });
     });
-    expect(ctx.onGap).toHaveBeenCalledTimes(1);
-    const handler = ctx.getGapHandler();
-    if (!handler) {
-      throw new Error("expected gap handler to be registered");
-    }
 
-    mockedRunAgentReconcileOperation.mockClear();
-    ctx.call.mockClear();
-
-    await act(async () => {
-      handler({ expected: 10, received: 11 });
-      await Promise.resolve();
+    expect(mockedLoadDomainAgentHistoryWindow).toHaveBeenCalledWith({
+      agentId: "agent-1",
+      sessionKey: "agent:agent-1:main",
+      view: "semantic",
+      turnLimit: 300,
+      scanLimit: 300,
     });
-    expect(ctx.call).toHaveBeenCalledWith("status", {});
-    expect(ctx.call).toHaveBeenCalledWith("sessions.preview", {
-      keys: ["agent:agent-1:main"],
-      limit: 8,
-      maxChars: 240,
-    });
-    expect(mockedRunAgentReconcileOperation).toHaveBeenCalledTimes(1);
-    expect(warnSpy).toHaveBeenCalledWith("Gateway event gap expected 10, received 11.");
-  });
-
-  it("unsubscribes gap listener on unmount", () => {
-    const ctx = renderController();
-    ctx.unmount();
-    expect(ctx.unsubscribeGap).toHaveBeenCalledTimes(1);
-  });
-
-  it("clears history in-flight tracking when requested", async () => {
-    const inFlightSeen: boolean[] = [];
-    mockedRunHistorySyncOperation.mockImplementation(
-      async ({ agentId, getAgent, inFlightSessionKeys }) => {
-        const agent = getAgent(agentId);
-        if (!agent) return [];
-        const sessionKey = agent.sessionKey;
-        inFlightSeen.push(inFlightSessionKeys.has(sessionKey));
-        inFlightSessionKeys.add(sessionKey);
-        return [];
-      }
+    expect(mockedHydrateDomainHistoryWindow).toHaveBeenCalledWith(
+      expect.objectContaining({
+        requestId: expect.any(String),
+        requestedLimit: 300,
+        view: "semantic",
+        reason: "refresh",
+      })
     );
+    expect(ctx.dispatch).toHaveBeenCalledWith({
+      type: "updateAgent",
+      agentId: "agent-1",
+      patch: {
+        outputLines: ["restored"],
+        historyLoadedAt: 555,
+      },
+    });
+  });
+
+  it("dedupes in-flight history requests by session key", async () => {
+    let resolveHistory!: (value: DomainAgentHistoryResult) => void;
+    const historyPromise = new Promise<DomainAgentHistoryResult>((resolve) => {
+      resolveHistory = resolve;
+    });
+    mockedLoadDomainAgentHistoryWindow.mockReturnValue(historyPromise);
 
     const ctx = renderController({
       status: "disconnected",
-      agents: [createAgent({ sessionKey: "agent:agent-1:main", historyLoadedAt: null })],
+      agents: [createAgent({ historyLoadedAt: null })],
       focusedAgentId: null,
-      focusedAgentRunning: false,
     });
 
-    await act(async () => {
-      await ctx.getValue().loadAgentHistory("agent-1");
+    const first = ctx.getValue().loadAgentHistory("agent-1");
+    const second = ctx.getValue().loadAgentHistory("agent-1");
+    await second;
+
+    expect(mockedLoadDomainAgentHistoryWindow).toHaveBeenCalledTimes(1);
+
+    resolveHistory(createHistoryResult());
+    await first;
+  });
+
+  it("allows manual clear of in-flight key to force a second request", async () => {
+    let resolveHistory!: (value: DomainAgentHistoryResult) => void;
+    const historyPromise = new Promise<DomainAgentHistoryResult>((resolve) => {
+      resolveHistory = resolve;
     });
-    await act(async () => {
-      await ctx.getValue().loadAgentHistory("agent-1");
+    mockedLoadDomainAgentHistoryWindow.mockReturnValue(historyPromise);
+
+    const ctx = renderController({
+      status: "disconnected",
+      agents: [createAgent({ historyLoadedAt: null, sessionKey: "agent:agent-1:main" })],
+      focusedAgentId: null,
     });
+
+    void ctx.getValue().loadAgentHistory("agent-1");
     act(() => {
       ctx.getValue().clearHistoryInFlight("agent:agent-1:main");
     });
-    await act(async () => {
-      await ctx.getValue().loadAgentHistory("agent-1");
-    });
+    void ctx.getValue().loadAgentHistory("agent-1");
 
-    expect(inFlightSeen).toEqual([false, true, false]);
+    expect(mockedLoadDomainAgentHistoryWindow).toHaveBeenCalledTimes(2);
+
+    resolveHistory(createHistoryResult());
   });
 
-  it("uses shared gateway chat-history max in non-domain mode by default", async () => {
+  it("clears session history cache when clearing in-flight state", async () => {
     const ctx = renderController({
       status: "disconnected",
-      useDomainApiReads: false,
-      maxHistoryLimit: undefined,
-      agents: [createAgent({ historyFetchLimit: 5_000 })],
+      agents: [createAgent({ historyLoadedAt: null, sessionKey: "agent:agent-1:main" })],
       focusedAgentId: null,
-      focusedAgentRunning: false,
     });
 
     await act(async () => {
-      await ctx.getValue().loadAgentHistory("agent-1", { limit: 5_000 });
+      await ctx.getValue().loadAgentHistory("agent-1", { reason: "bootstrap" });
+    });
+    expect(mockedLoadDomainAgentHistoryWindow).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      await ctx.getValue().loadAgentHistory("agent-1", { reason: "bootstrap" });
+    });
+    expect(mockedLoadDomainAgentHistoryWindow).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      ctx.getValue().clearHistoryInFlight("agent:agent-1:main");
     });
 
-    expect(mockedRunHistorySyncOperation).toHaveBeenCalledWith(
-      expect.objectContaining({
-        agentId: "agent-1",
-        requestedLimit: 5_000,
-        maxLimit: RUNTIME_SYNC_MAX_HISTORY_LIMIT,
-      })
-    );
+    await act(async () => {
+      await ctx.getValue().loadAgentHistory("agent-1", { reason: "bootstrap" });
+    });
+    expect(mockedLoadDomainAgentHistoryWindow).toHaveBeenCalledTimes(2);
   });
 
-  it("uses domain runtime APIs and uses chat-history load-more limit floor", async () => {
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url.includes("/api/runtime/summary")) {
-        return new Response(
-          JSON.stringify({
-            enabled: true,
-            summary: { status: "connected", reason: null, asOf: null, outboxHead: 0 },
-            freshness: { source: "controlplane", stale: false, asOf: null, reason: null },
-          }),
-          { status: 200, headers: { "Content-Type": "application/json" } }
-        );
-      }
-      if (url.includes("/api/runtime/chat-history")) {
-        return new Response(
-          JSON.stringify({
-            ok: true,
-            payload: {
-              sessionKey: "agent:agent-1:main",
-              messages: [],
-            },
-          }),
-          { status: 200, headers: { "Content-Type": "application/json" } }
-        );
-      }
-      return new Response(JSON.stringify({}), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    });
-    vi.stubGlobal("fetch", fetchMock);
-
+  it("grows history limit when loading more history", async () => {
     const ctx = renderController({
       status: "disconnected",
-      useDomainApiReads: true,
-      agents: [createAgent({ historyFetchLimit: 2 })],
+      agents: [
+        createAgent({
+          historyLoadedAt: 1234,
+          historyMaybeTruncated: true,
+          historyFetchLimit: 200,
+        }),
+      ],
       focusedAgentId: null,
-      focusedAgentRunning: false,
-    });
-
-    mockedRunHistorySyncOperation.mockImplementation(async (params) => {
-      await params.client.call("chat.history", {
-        sessionKey: "agent:agent-1:main",
-        limit: 100,
-      });
-      return [];
-    });
-
-    await act(async () => {
-      await ctx.getValue().loadAgentHistory("agent-1", { limit: 2 });
+      defaultHistoryLimit: 50,
+      maxHistoryLimit: 500,
     });
 
     await act(async () => {
@@ -529,152 +340,50 @@ describe("useRuntimeSyncController", () => {
       await Promise.resolve();
       await Promise.resolve();
     });
-    expect(mockedRunHistorySyncOperation).toHaveBeenCalledWith(
-      expect.objectContaining({
-        agentId: "agent-1",
-        requestedLimit: 100,
-      })
-    );
-    expect(fetchMock).toHaveBeenCalledWith(
-      expect.stringContaining(
-        "/api/runtime/chat-history?sessionKey=agent%3Aagent-1%3Amain&limit=100"
-      ),
-      expect.anything()
-    );
-    expect(
-      fetchMock.mock.calls.map((call) => String(call[0])).some((url) => url.includes("/api/runtime/agents/"))
-    ).toBe(false);
 
-    expect(ctx.call).not.toHaveBeenCalledWith("status", {});
-    vi.unstubAllGlobals();
-    ctx.unmount();
-  });
-
-  it("executes domain history sync commands through shared history operation", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () =>
-        new Response(JSON.stringify({ enabled: true }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        })
-      )
-    );
-
-    mockedRunHistorySyncOperation.mockResolvedValue([
-      {
-        kind: "dispatchUpdateAgent",
-        agentId: "agent-1",
-        patch: {
-          outputLines: ["> user turn restored from transcript", "assistant response"],
-          lastUserMessage: "user turn restored from transcript",
-        },
-      },
-    ]);
-    mockedExecuteHistorySyncCommands.mockImplementation(
-      ({ commands, dispatch }: { commands: Array<{ kind: string; agentId?: string; patch?: unknown }>; dispatch: (action: { type: "updateAgent"; agentId: string; patch: Partial<AgentState> }) => void }) => {
-        for (const command of commands) {
-          if (command.kind !== "dispatchUpdateAgent") continue;
-          if (typeof command.agentId !== "string") continue;
-          if (!command.patch || typeof command.patch !== "object") continue;
-          dispatch({
-            type: "updateAgent",
-            agentId: command.agentId,
-            patch: command.patch as Partial<AgentState>,
-          });
-        }
-      }
-    );
-
-    const ctx = renderController({
-      status: "disconnected",
-      useDomainApiReads: true,
-      agents: [createAgent({ historyFetchLimit: 2 })],
-      focusedAgentId: null,
-      focusedAgentRunning: false,
-    });
-
-    await act(async () => {
-      await ctx.getValue().loadAgentHistory("agent-1", { limit: 2 });
-    });
-
-    expect(mockedRunHistorySyncOperation).toHaveBeenCalledWith(
-      expect.objectContaining({
-        agentId: "agent-1",
-        requestedLimit: 2,
-        transcriptV2Enabled: expect.any(Boolean),
-        allowTranscriptRevisionSkew: true,
-      })
-    );
-    expect(mockedExecuteHistorySyncCommands).toHaveBeenCalledTimes(1);
-    expect(ctx.dispatch).toHaveBeenCalledWith({
-      type: "updateAgent",
+    expect(mockedLoadDomainAgentHistoryWindow).toHaveBeenCalledWith({
       agentId: "agent-1",
-      patch: expect.objectContaining({
-        outputLines: ["> user turn restored from transcript", "assistant response"],
-        lastUserMessage: "user turn restored from transcript",
-      }),
+      sessionKey: "agent:agent-1:main",
+      view: "semantic",
+      turnLimit: 400,
+      scanLimit: 500,
     });
-
-    vi.unstubAllGlobals();
-    ctx.unmount();
   });
 
-  it("clamps domain transcript hydration requests to gateway chat.history max limit", async () => {
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url.includes("/api/runtime/chat-history")) {
-        return new Response(
-          JSON.stringify({
-            ok: true,
-            payload: {
-              sessionKey: "agent:agent-1:main",
-              messages: [{ role: "user", content: "restored user turn" }],
-            },
-          }),
-          { status: 200, headers: { "Content-Type": "application/json" } }
-        );
-      }
-      return new Response(JSON.stringify({ enabled: true }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    });
-    vi.stubGlobal("fetch", fetchMock);
-
-    mockedRunHistorySyncOperation.mockImplementation(async (params) => {
-      await params.client.call("chat.history", {
-        sessionKey: "agent:agent-1:main",
-        limit: 5_000,
-      });
-      return [];
-    });
-
+  it("skips load-more when history is not truncated", async () => {
     const ctx = renderController({
       status: "disconnected",
-      useDomainApiReads: true,
-      agents: [createAgent({ historyFetchLimit: 5_000 })],
+      agents: [createAgent({ historyLoadedAt: 1234, historyMaybeTruncated: false })],
       focusedAgentId: null,
-      focusedAgentRunning: false,
     });
 
     await act(async () => {
-      await ctx.getValue().loadAgentHistory("agent-1", { limit: 5_000 });
+      ctx.getValue().loadMoreAgentHistory("agent-1");
+      await Promise.resolve();
     });
 
-    expect(mockedRunHistorySyncOperation).toHaveBeenCalledWith(
-      expect.objectContaining({
-        agentId: "agent-1",
-        requestedLimit: 5_000,
-        maxLimit: 1_000,
-      })
-    );
-    expect(fetchMock).toHaveBeenCalledWith(
-      expect.stringContaining("/api/runtime/chat-history?sessionKey=agent%3Aagent-1%3Amain&limit=1000"),
-      expect.anything()
-    );
+    expect(mockedLoadDomainAgentHistoryWindow).not.toHaveBeenCalled();
+  });
 
-    vi.unstubAllGlobals();
-    ctx.unmount();
+  it("skips load-more when gateway cap has been reached", async () => {
+    const ctx = renderController({
+      status: "disconnected",
+      agents: [
+        createAgent({
+          historyLoadedAt: 1234,
+          historyMaybeTruncated: true,
+          historyGatewayCapReached: true,
+          historyFetchLimit: 1000,
+        }),
+      ],
+      focusedAgentId: null,
+    });
+
+    await act(async () => {
+      ctx.getValue().loadMoreAgentHistory("agent-1");
+      await Promise.resolve();
+    });
+
+    expect(mockedLoadDomainAgentHistoryWindow).not.toHaveBeenCalled();
   });
 });
