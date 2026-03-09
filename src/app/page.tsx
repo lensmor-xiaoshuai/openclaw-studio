@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { AgentChatPanel } from "@/features/agents/components/AgentChatPanel";
 import { AgentCreateModal } from "@/features/agents/components/AgentCreateModal";
@@ -1837,11 +1837,12 @@ const AgentStudioPage = () => {
     </div>
   );
 };
-
 export default function Home() {
   return (
-    <AgentStoreProvider>
-      <AgentStudioPage />
-    </AgentStoreProvider>
+    <Suspense>
+      <AgentStoreProvider>
+        <AgentStudioPage />
+      </AgentStoreProvider>
+    </Suspense>
   );
 }
