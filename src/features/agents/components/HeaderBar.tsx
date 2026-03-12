@@ -63,7 +63,7 @@ export const HeaderBar = ({
                 onClick={() => setMenuOpen((prev) => !prev)}
               >
                 <Plug className="h-3.5 w-3.5" />
-                <span className="sr-only">Open studio menu</span>
+                <span className="sr-only">打开设置菜单</span>
               </button>
               {menuOpen ? (
                 <div className="ui-card ui-menu-popover absolute right-0 top-9 z-[260] min-w-44 p-1">
@@ -76,7 +76,7 @@ export const HeaderBar = ({
                     }}
                     data-testid="gateway-settings-toggle"
                   >
-                    Gateway connection
+                    网关连接
                   </button>
                 </div>
               ) : null}

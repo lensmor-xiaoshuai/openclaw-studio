@@ -198,7 +198,7 @@ const resolveNextNewAgentName = (agents: AgentState[]) => {
     if (existingIds.has(slugifyAgentName(candidate))) continue;
     return candidate;
   }
-  throw new Error("Unable to allocate a unique agent name.");
+  throw new Error("无法分配唯一的智能体名称");
 };
 
 const AgentStudioPage = () => {
@@ -920,7 +920,7 @@ const AgentStudioPage = () => {
     setPersonalityHasUnsavedChanges,
     push: router.push,
     replace: router.replace,
-    confirmDiscard: () => window.confirm("Discard changes?"),
+    confirmDiscard: () => window.confirm("放弃更改？"),
   });
   const handleOpenCreateAgentModal = useCallback(() => {
     if (createAgentBusy) return;
@@ -1072,7 +1072,7 @@ const AgentStudioPage = () => {
       setCreateAgentBlock(null);
       setCreateAgentModalOpen(false);
       void loadAgents();
-      setError("Agent creation timed out.");
+      setError("智能体创建超时");
     };
     if (timeoutNow) {
       handleTimeout();
@@ -1328,9 +1328,9 @@ const AgentStudioPage = () => {
       : null;
   const createBlockStatusLine = createAgentBlock
     ? createAgentBlock.phase === "queued"
-      ? "Waiting for active runs to finish"
+      ? "等待运行中的任务完成"
       : createAgentBlock.phase === "creating"
-      ? "Submitting config change"
+      ? "正在提交配置变更"
       : null
     : null;
   const restartingMutationStatusLine = resolveConfigMutationStatusLine({
@@ -1349,13 +1349,13 @@ const AgentStudioPage = () => {
     : null;
   const restartingMutationAriaLabel = restartingMutationBlock
     ? restartingMutationBlock.kind === "delete-agent"
-      ? "Deleting agent and restarting gateway"
-      : "Renaming agent and restarting gateway"
+      ? "正在删除智能体并重启网关"
+      : "正在重命名智能体并重启网关"
     : null;
   const restartingMutationHeading = restartingMutationBlock
     ? restartingMutationBlock.kind === "delete-agent"
-      ? "Agent delete in progress"
-      : "Agent rename in progress"
+      ? "智能体删除中"
+      : "智能体重命名中"
     : null;
 
   useEffect(() => {
@@ -1379,7 +1379,7 @@ const AgentStudioPage = () => {
               OpenClaw Studio
             </div>
             <div className="mt-3 text-sm text-muted-foreground">
-              {gatewayConnecting ? "Connecting to gateway…" : "Booting Studio…"}
+              {gatewayConnecting ? "连接网关中…" : "启动中…"}
             </div>
           </div>
         </div>
@@ -1403,7 +1403,7 @@ const AgentStudioPage = () => {
                   className="ui-btn-secondary px-3 py-1.5 font-mono text-[10px] font-semibold tracking-[0.06em]"
                   onClick={handleBackToChat}
                 >
-                  Back to chat
+                  返回对话
                 </button>
               </div>
             ) : null}
@@ -1535,16 +1535,16 @@ const AgentStudioPage = () => {
                     className="ui-btn-secondary w-full px-3 py-1.5 font-mono text-[10px] font-semibold tracking-[0.06em]"
                     onClick={handleBackToChat}
                   >
-                    Back to chat
+                    返回对话
                   </button>
                 </div>
                 <nav className="py-3">
                   {(
                     [
-                      { id: "personality", label: "Behavior" },
-                      { id: "capabilities", label: "Capabilities" },
-                      { id: "automations", label: "Automations" },
-                      { id: "advanced", label: "Advanced" },
+                      { id: "personality", label: "行为" },
+                      { id: "capabilities", label: "能力" },
+                      { id: "automations", label: "自动化" },
+                      { id: "advanced", label: "高级" },
                     ] as const
                   ).map((entry) => {
                     const active = effectiveSettingsTab === entry.id;
@@ -1577,7 +1577,7 @@ const AgentStudioPage = () => {
                 <div className="flex items-start justify-between border-b border-border/60 px-6 py-4">
                   <div>
                     <div className="text-lg font-semibold text-foreground">
-                      {inspectSidebarAgent?.name ?? settingsRouteAgentId ?? "Agent settings"}
+                      {inspectSidebarAgent?.name ?? settingsRouteAgentId ?? "智能体设置"}
                     </div>
                     <div className="mt-1 font-mono text-[11px] text-muted-foreground">
                       Model: {settingsHeaderModel}{" "}
@@ -1586,7 +1586,7 @@ const AgentStudioPage = () => {
                     </div>
                   </div>
                   <div className="rounded-md border border-border/70 bg-surface-1 px-3 py-1 font-mono text-[11px] text-muted-foreground">
-                    [{personalityHasUnsavedChanges ? "Unsaved" : "Saved ✓"}]
+                    [{personalityHasUnsavedChanges ? "未保存" : "已保存 ✓"}]
                   </div>
                 </div>
                 <div className="min-h-0 flex-1 overflow-hidden">
@@ -1646,8 +1646,8 @@ const AgentStudioPage = () => {
                     )
                   ) : (
                     <EmptyStatePanel
-                      title="Agent not found."
-                      description="Back to chat and select an available agent."
+                      title="未找到智能体"
+                      description="返回对话并选择一个可用的智能体。"
                       fillHeight
                       className="items-center p-6 text-center text-sm"
                     />
@@ -1749,13 +1749,13 @@ const AgentStudioPage = () => {
                   </div>
                 ) : (
                   <EmptyStatePanel
-                    title={hasAnyAgents ? "No agents match this filter." : "No agents available."}
+                    title={hasAnyAgents ? "没有匹配此筛选条件的智能体" : "暂无智能体"}
                     description={
                       hasAnyAgents
                         ? undefined
                         : gatewayConnected
-                          ? "Use New Agent in the sidebar to add your first agent."
-                          : "Connect to your gateway to load agents into the studio."
+                          ? "在侧栏点击「新建智能体」添加你的第一个智能体。"
+                          : "连接网关以加载智能体。"
                     }
                     fillHeight
                     className="items-center p-6 text-center text-sm"

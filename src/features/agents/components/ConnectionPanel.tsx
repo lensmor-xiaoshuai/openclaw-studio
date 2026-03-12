@@ -52,10 +52,10 @@ export const ConnectionPanel = ({
 }: ConnectionPanelProps) => {
   const actionBusy = saving || testing || disconnecting;
   const tokenHelper = hasStoredToken
-    ? "Stored token available on this Studio host. Leave blank to keep it."
+    ? "此 Studio 主机已存储 token。留空以保留。"
     : localGatewayDefaultsHasToken
-      ? "A local OpenClaw token is available on this host. Leave blank to use it."
-      : "Enter the token Studio should use for this upstream.";
+      ? "此主机上有本地 OpenClaw token 可用。留空以使用。"
+      : "输入 Studio 应使用的上游 token。";
 
   return (
     <div className="fade-up-delay flex flex-col gap-3">
@@ -73,7 +73,7 @@ export const ConnectionPanel = ({
             onClick={onSaveSettings}
             disabled={actionBusy || !draftGatewayUrl.trim()}
           >
-            {saving ? "Saving…" : "Save settings"}
+            {saving ? "保存中…" : "保存设置"}
           </button>
           <button
             className="ui-btn-ghost px-4 py-2 text-xs font-semibold tracking-[0.05em] text-foreground disabled:cursor-not-allowed disabled:opacity-60"
@@ -81,7 +81,7 @@ export const ConnectionPanel = ({
             onClick={onTestConnection}
             disabled={actionBusy || !draftGatewayUrl.trim()}
           >
-            {testing ? "Testing…" : "Test connection"}
+            {testing ? "测试中…" : "测试连接"}
           </button>
           {status === "connected" ? (
             <button
@@ -90,7 +90,7 @@ export const ConnectionPanel = ({
               onClick={onDisconnect}
               disabled={actionBusy}
             >
-              {disconnecting ? "Disconnecting…" : "Disconnect"}
+              {disconnecting ? "断开中…" : "断开连接"}
             </button>
           ) : null}
         </div>

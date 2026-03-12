@@ -109,7 +109,7 @@ type AgentSettingsPanelProps = {
 
 const formatCronStateLine = (job: CronJobSummary): string | null => {
   if (typeof job.state.runningAtMs === "number" && Number.isFinite(job.state.runningAtMs)) {
-    return "Running now";
+    return "运行中";
   }
   if (typeof job.state.nextRunAtMs === "number" && Number.isFinite(job.state.nextRunAtMs)) {
     return `Next: ${new Date(job.state.nextRunAtMs).toLocaleString()}`;
@@ -142,41 +142,41 @@ type CronTemplateOption = {
 const CRON_TEMPLATE_OPTIONS: CronTemplateOption[] = [
   {
     id: "morning-brief",
-    title: "Morning Brief",
-    description: "Daily status summary with overnight updates.",
+    title: "晨报",
+    description: "每日状态摘要，包含隔夜更新。",
     icon: Sun,
   },
   {
     id: "reminder",
-    title: "Reminder",
-    description: "A timed nudge for a specific event or task.",
+    title: "提醒",
+    description: "为特定事件或任务设定定时提醒。",
     icon: Bell,
   },
   {
     id: "weekly-review",
-    title: "Weekly Review",
-    description: "Recurring synthesis across a longer time window.",
+    title: "周报",
+    description: "跨较长时间窗口的周期性总结。",
     icon: CalendarDays,
   },
   {
     id: "inbox-triage",
-    title: "Inbox Triage",
-    description: "Regular sorting and summarizing of incoming updates.",
+    title: "收件分拣",
+    description: "定期整理未读更新，筛选重要事项。",
     icon: ListChecks,
   },
   {
     id: "custom",
-    title: "Custom",
-    description: "Start from a blank flow and choose each setting.",
+    title: "自定义",
+    description: "从空白流程开始，自选每个设置。",
     icon: ListChecks,
   },
 ];
 
 const TIMED_AUTOMATION_STEP_META: Array<{ title: string; indicator: string }> = [
-  { title: "Choose type", indicator: "Type" },
-  { title: "Define function", indicator: "Function" },
-  { title: "Set timing", indicator: "Timing" },
-  { title: "Review and create", indicator: "Review" },
+  { title: "选择类型", indicator: "类型" },
+  { title: "定义功能", indicator: "功能" },
+  { title: "设定时间", indicator: "时间" },
+  { title: "检查并创建", indicator: "检查" },
 ];
 
 const resolveLocalTimeZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
@@ -215,8 +215,8 @@ const applyTemplateDefaults = (templateId: CronCreateTemplateId, current: CronCr
     return {
       ...base,
       templateId,
-      name: "Morning brief",
-      taskText: "Summarize overnight updates and priorities.",
+      name: "晨报",
+      taskText: "总结隔夜更新和优先事项。",
       scheduleKind: "every",
       everyAmount: 1,
       everyUnit: "days",
@@ -227,8 +227,8 @@ const applyTemplateDefaults = (templateId: CronCreateTemplateId, current: CronCr
     return {
       ...base,
       templateId,
-      name: "Reminder",
-      taskText: "Reminder: follow up on today's priority task.",
+      name: "提醒",
+      taskText: "提醒：跟进今天的优先任务。",
       scheduleKind: "at",
       scheduleAt: "",
     };
@@ -237,8 +237,8 @@ const applyTemplateDefaults = (templateId: CronCreateTemplateId, current: CronCr
     return {
       ...base,
       templateId,
-      name: "Weekly review",
-      taskText: "Summarize wins, blockers, and next-week priorities.",
+      name: "周报",
+      taskText: "总结本周成果、阻塞项和下周优先事项。",
       scheduleKind: "every",
       everyAmount: 7,
       everyUnit: "days",
@@ -249,8 +249,8 @@ const applyTemplateDefaults = (templateId: CronCreateTemplateId, current: CronCr
     return {
       ...base,
       templateId,
-      name: "Inbox triage",
-      taskText: "Triage unread updates and surface the top actions.",
+      name: "收件分拣",
+      taskText: "整理未读更新，筛选最重要的待办事项。",
       scheduleKind: "every",
       everyAmount: 30,
       everyUnit: "minutes",
@@ -437,7 +437,7 @@ export const AgentSettingsPanel = ({
       await onCreateCronJob(payload);
       closeCronCreate();
     } catch (err) {
-      setCronCreateError(err instanceof Error ? err.message : "Failed to create automation.");
+      setCronCreateError(err instanceof Error ? err.message : "创建自动化失败");
     }
   };
 
@@ -461,7 +461,7 @@ export const AgentSettingsPanel = ({
 
   const panelLabel =
     mode === "advanced"
-      ? "Advanced"
+      ? "高级"
       : "";
   const canOpenControlUi = typeof controlUiUrl === "string" && controlUiUrl.trim().length > 0;
   const timedAutomationStepMeta =
@@ -501,9 +501,9 @@ export const AgentSettingsPanel = ({
                     >
                       {(
                         [
-                          { id: "off", label: "Off" },
-                          { id: "ask", label: "Ask" },
-                          { id: "auto", label: "Auto" },
+                          { id: "off", label: "关闭" },
+                          { id: "ask", label: "询问" },
+                          { id: "auto", label: "自动" },
                         ] as const
                       ).map((option) => {
                         const selected = permissionsDraftValue.commandMode === option.id;
@@ -602,8 +602,8 @@ export const AgentSettingsPanel = ({
                 </div>
               </div>
               <div className="sidebar-copy mt-3 text-[11px] text-muted-foreground">
-                {permissionsSaveState === "saving" ? "Saving..." : null}
-                {permissionsSaveState === "saved" ? "Saved." : null}
+                {permissionsSaveState === "saving" ? "保存中..." : null}
+                {permissionsSaveState === "saved" ? "已保存" : null}
                 {permissionsSaveState === "error" && permissionsSaveError ? (
                   <span>
                     Couldn&apos;t save. {permissionsSaveError}{" "}
@@ -634,7 +634,7 @@ export const AgentSettingsPanel = ({
             data-testid="agent-settings-cron"
           >
           <div className="flex items-center justify-between gap-2">
-            <h3 className="sidebar-section-title">Timed automations</h3>
+            <h3 className="sidebar-section-title">定时自动化</h3>
             {!cronLoading && !cronError && cronJobs.length > 0 ? (
               <button
                 className="sidebar-btn-ghost px-2.5 py-1.5 font-mono text-[10px] font-semibold tracking-[0.06em] disabled:cursor-not-allowed disabled:opacity-60"
@@ -731,7 +731,7 @@ export const AgentSettingsPanel = ({
                                   });
                                 }}
                               >
-                                {expanded ? "Less" : "More"}
+                                {expanded ? "收起" : "更多"}
                               </button>
                             ) : null}
                           </div>
@@ -774,9 +774,9 @@ export const AgentSettingsPanel = ({
             className="sidebar-section"
             data-testid="agent-settings-heartbeat-coming-soon"
           >
-            <h3 className="sidebar-section-title">Heartbeats</h3>
+            <h3 className="sidebar-section-title">心跳</h3>
             <div className="mt-3 text-[11px] text-muted-foreground">
-              Heartbeat automation controls are coming soon.
+              心跳自动化控制即将推出。
             </div>
           </section>
           </section>
@@ -790,9 +790,9 @@ export const AgentSettingsPanel = ({
                 <div className="flex items-start gap-2">
                   <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
                   <div className="space-y-1">
-                    <div className="font-medium">Advanced users only.</div>
-                    <div>Open the full OpenClaw Control UI outside Studio.</div>
-                    <div>Changes there can break agent behavior or put Studio out of sync.</div>
+                    <div className="font-medium">仅限高级用户</div>
+                    <div>在 Studio 外打开完整的 OpenClaw 控制界面。</div>
+                    <div>在那里的更改可能会破坏智能体行为或导致 Studio 不同步。</div>
                   </div>
                 </div>
               </div>
@@ -956,8 +956,8 @@ export const AgentSettingsPanel = ({
                         updateCronDraft({ scheduleKind: event.target.value as CronCreateDraft["scheduleKind"] })
                       }
                     >
-                      <option value="every">Every</option>
-                      <option value="at">One time</option>
+                      <option value="every">每</option>
+                      <option value="at">一次性</option>
                     </select>
                   </label>
                   {cronDraft.scheduleKind === "every" ? (
@@ -992,9 +992,9 @@ export const AgentSettingsPanel = ({
                             })
                           }
                         >
-                          <option value="minutes">Minutes</option>
-                          <option value="hours">Hours</option>
-                          <option value="days">Days</option>
+                          <option value="minutes">分钟</option>
+                          <option value="hours">小时</option>
+                          <option value="days">天</option>
                         </select>
                       </label>
                       {cronDraft.everyUnit === "days" ? (
@@ -1041,10 +1041,10 @@ export const AgentSettingsPanel = ({
               ) : null}
               {cronCreateStep === 3 ? (
                 <div className="space-y-3 text-sm text-muted-foreground">
-                  <div>Review details before creating this automation.</div>
+                  <div>创建自动化前检查详情。</div>
                   <div className="ui-card px-3 py-2">
                     <div className="font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-foreground">
-                      {cronDraft.name || "Untitled automation"}
+                      {cronDraft.name || "未命名自动化"}
                     </div>
                     <div className="mt-1 text-[11px]">{cronDraft.taskText || "No task provided."}</div>
                     <div className="mt-2 text-[11px]">
@@ -1152,14 +1152,14 @@ const useAgentFilesEditor = (params: {
         savedAgentFilesRef.current = emptyState;
         setAgentFiles(emptyState);
         setAgentFilesDirty(false);
-        setAgentFilesError("Agent ID is missing for this agent.");
+        setAgentFilesError("此智能体缺少 ID");
         return;
       }
       if (gatewayStatus !== "connected") {
         if (gatewayStatus === "connecting") {
           setAgentFilesError(null);
         } else {
-          setAgentFilesError("Gateway is not connected.");
+          setAgentFilesError("网关未连接");
         }
         return;
       }
@@ -1181,7 +1181,7 @@ const useAgentFilesEditor = (params: {
       setAgentFiles(nextState);
       setAgentFilesDirty(false);
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to load agent files.";
+      const message = err instanceof Error ? err.message : "加载智能体文件失败";
       setAgentFilesError(message);
     } finally {
       setAgentFilesLoading(false);
@@ -1194,11 +1194,11 @@ const useAgentFilesEditor = (params: {
     try {
       const trimmedAgentId = agentId?.trim();
       if (!trimmedAgentId) {
-        setAgentFilesError("Agent ID is missing for this agent.");
+        setAgentFilesError("此智能体缺少 ID");
         return false;
       }
       if (gatewayStatus !== "connected") {
-        setAgentFilesError("Gateway is not connected.");
+        setAgentFilesError("网关未连接");
         return false;
       }
       await Promise.all(
@@ -1371,9 +1371,9 @@ export const AgentBrainPanel = ({
           </div>
 
           <div className="space-y-8 pb-8">
-            <AgentBrainPanelSection title="Persona">
+            <AgentBrainPanelSection title="人格">
               <textarea
-                aria-label="Persona"
+                aria-label="人格"
                 className="h-56 w-full resize-y rounded-md border border-border/80 bg-background px-4 py-3 font-mono text-sm leading-6 text-foreground outline-none"
                 value={agentFiles["SOUL.md"].content}
                 disabled={agentFilesLoading || agentFilesSaving}
@@ -1383,9 +1383,9 @@ export const AgentBrainPanel = ({
               />
             </AgentBrainPanelSection>
 
-            <AgentBrainPanelSection title="Directives">
+            <AgentBrainPanelSection title="指令">
               <textarea
-                aria-label="Directives"
+                aria-label="指令"
                 className="h-56 w-full resize-y rounded-md border border-border/80 bg-background px-4 py-3 font-mono text-sm leading-6 text-foreground outline-none"
                 value={agentFiles["AGENTS.md"].content}
                 disabled={agentFilesLoading || agentFilesSaving}
@@ -1395,9 +1395,9 @@ export const AgentBrainPanel = ({
               />
             </AgentBrainPanelSection>
 
-            <AgentBrainPanelSection title="Context">
+            <AgentBrainPanelSection title="上下文">
               <textarea
-                aria-label="Context"
+                aria-label="上下文"
                 className="h-56 w-full resize-y rounded-md border border-border/80 bg-background px-4 py-3 font-mono text-sm leading-6 text-foreground outline-none"
                 value={agentFiles["USER.md"].content}
                 disabled={agentFilesLoading || agentFilesSaving}
@@ -1408,7 +1408,7 @@ export const AgentBrainPanel = ({
             </AgentBrainPanelSection>
 
             <section className="space-y-3 border-t border-border/55 pt-8">
-              <h3 className="text-sm font-medium text-foreground">Identity</h3>
+              <h3 className="text-sm font-medium text-foreground">身份</h3>
               <div className="grid gap-4 sm:grid-cols-2">
                 <label className="flex flex-col gap-2 text-xs text-muted-foreground">
                   Name

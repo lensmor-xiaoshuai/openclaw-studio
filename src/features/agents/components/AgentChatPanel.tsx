@@ -68,11 +68,11 @@ const MESSAGE_CONTENT_VISIBILITY_STYLE: CSSProperties = {
   containIntrinsicSize: "220px",
 };
 const EMPTY_CHAT_INTRO_MESSAGES = [
-  "How can I help you today?",
-  "What should we accomplish today?",
-  "Ready when you are. What do you want to tackle?",
-  "What are we working on today?",
-  "I'm here and ready. What's the plan?",
+  "今天有什么需要帮忙的？",
+  "今天我们要完成什么？",
+  "准备好了，要做什么？",
+  "今天在做什么项目？",
+  "随时待命，有什么计划？",
 ];
 
 const stableStringHash = (value: string): number => {
@@ -152,7 +152,7 @@ type AgentChatPanelProps = {
 };
 
 const formatApprovalExpiry = (timestampMs: number): string => {
-  if (!Number.isFinite(timestampMs) || timestampMs <= 0) return "Unknown";
+  if (!Number.isFinite(timestampMs) || timestampMs <= 0) return "未知";
   return new Intl.DateTimeFormat(undefined, {
     month: "short",
     day: "numeric",
@@ -175,14 +175,14 @@ const ExecApprovalCard = memo(function ExecApprovalCard({
       data-testid={`exec-approval-card-${approval.id}`}
     >
       <div className="type-meta">
-        Exec approval required
+        需要执行审批
       </div>
       <div className="mt-2 rounded-md bg-surface-3 px-2 py-1.5 shadow-2xs">
         <div className="font-mono text-[10px] font-semibold text-foreground">{approval.command}</div>
       </div>
       <div className="mt-2 grid gap-1 text-[11px] text-muted-foreground sm:grid-cols-2">
-        <div>Host: {approval.host ?? "unknown"}</div>
-        <div>Expires: {formatApprovalExpiry(approval.expiresAtMs)}</div>
+        <div>主机: {approval.host ?? "未知"}</div>
+        <div>过期: {formatApprovalExpiry(approval.expiresAtMs)}</div>
         {approval.cwd ? <div className="sm:col-span-2">CWD: {approval.cwd}</div> : null}
       </div>
       {approval.error ? (
@@ -198,7 +198,7 @@ const ExecApprovalCard = memo(function ExecApprovalCard({
           disabled={disabled}
           aria-label={`Allow once for exec approval ${approval.id}`}
         >
-          Allow once
+          允许一次
         </button>
         <button
           type="button"
@@ -207,7 +207,7 @@ const ExecApprovalCard = memo(function ExecApprovalCard({
           disabled={disabled}
           aria-label={`Always allow for exec approval ${approval.id}`}
         >
-          Always allow
+          始终允许
         </button>
         <button
           type="button"
@@ -216,7 +216,7 @@ const ExecApprovalCard = memo(function ExecApprovalCard({
           disabled={disabled}
           aria-label={`Deny exec approval ${approval.id}`}
         >
-          Deny
+          拒绝
         </button>
       </div>
     </div>
@@ -847,7 +847,7 @@ const AgentChatTranscript = memo(function AgentChatTranscript({
               </div>
               {historyGatewayCapReached && !hasHiddenFetchedHistory ? (
                 <div className="type-meta w-full min-w-0 break-words font-mono text-muted-foreground sm:w-auto sm:shrink-0">
-                  Showing latest retrievable history
+                  已显示最早可获取的历史
                 </div>
               ) : (
                 <button
@@ -855,7 +855,7 @@ const AgentChatTranscript = memo(function AgentChatTranscript({
                   className="inline-flex w-fit self-start rounded-md border border-border/70 bg-surface-3 px-3 py-1.5 font-mono text-[12px] font-medium tracking-[0.02em] text-foreground transition hover:bg-surface-2 sm:self-auto"
                   onClick={onLoadMoreHistory}
                 >
-                  {hasHiddenFetchedHistory ? "Show older" : "Load more"}
+                  {hasHiddenFetchedHistory ? "显示更早" : "加载更多"}
                 </button>
               )}
             </div>
@@ -1024,28 +1024,28 @@ const AgentChatComposer = memo(function AgentChatComposer({
 }) {
   const stopReason = stopDisabledReason?.trim() ?? "";
   const stopDisabled = !canSend || stopBusy || Boolean(stopReason);
-  const stopAriaLabel = stopReason ? `Stop unavailable: ${stopReason}` : "Stop";
+  const stopAriaLabel = stopReason ? `无法停止: ${stopReason}` : "停止";
   const modelSelectedLabel = useMemo(() => {
-    if (modelOptions.length === 0) return "No models found";
+    if (modelOptions.length === 0) return "未找到模型";
     return modelOptions.find((option) => option.value === modelValue)?.label ?? modelValue;
   }, [modelOptions, modelValue]);
   const modelSelectWidthCh = Math.max(11, Math.min(30, modelSelectedLabel.length + 6));
   const thinkingSelectedLabel = useMemo(() => {
     switch (thinkingValue) {
       case "off":
-        return "Off";
+        return "关闭";
       case "minimal":
-        return "Minimal";
+        return "最低";
       case "low":
-        return "Low";
+        return "低";
       case "medium":
-        return "Medium";
+        return "中";
       case "high":
-        return "High";
+        return "高";
       case "xhigh":
-        return "XHigh";
+        return "极高";
       default:
-        return "Default";
+        return "默认";
     }
   }, [thinkingValue]);
   const thinkingSelectWidthCh = Math.max(9, Math.min(16, thinkingSelectedLabel.length + 6));
@@ -1096,7 +1096,7 @@ const AgentChatComposer = memo(function AgentChatComposer({
               disabled
               className="invisible rounded-md border border-border/70 bg-surface-3 px-3 py-2 font-mono text-[12px] font-medium tracking-[0.02em] text-foreground"
             >
-              {stopBusy ? "Stopping" : "Stop"}
+              {stopBusy ? "停止中" : "停止"}
             </button>
           ) : null}
           <button
@@ -1106,7 +1106,7 @@ const AgentChatComposer = memo(function AgentChatComposer({
             disabled
             className="ui-btn-primary ui-btn-send invisible px-3 py-2 font-mono text-[12px] font-medium tracking-[0.02em]"
           >
-            Send
+            发送
           </button>
         </div>
       ) : null}
@@ -1118,7 +1118,7 @@ const AgentChatComposer = memo(function AgentChatComposer({
           className="chat-composer-input min-h-[28px] max-h-[34vh] min-w-0 flex-1 resize-none border-0 bg-transparent px-0 py-1 text-[16px] leading-6 text-foreground outline-none shadow-none transition placeholder:text-muted-foreground/65 focus:outline-none focus-visible:outline-none focus-visible:ring-0 sm:text-[15px]"
           onChange={onChange}
           onKeyDown={onKeyDown}
-          placeholder="type a message"
+          placeholder="输入消息"
         />
         {running ? (
           <span className="inline-flex" title={stopReason || undefined}>
@@ -1129,7 +1129,7 @@ const AgentChatComposer = memo(function AgentChatComposer({
               disabled={stopDisabled}
               aria-label={stopAriaLabel}
             >
-              {stopBusy ? "Stopping" : "Stop"}
+              {stopBusy ? "停止中" : "停止"}
             </button>
           </span>
         ) : null}
@@ -1139,12 +1139,12 @@ const AgentChatComposer = memo(function AgentChatComposer({
           onClick={onSend}
           disabled={sendDisabled}
         >
-          Send
+          发送
         </button>
       </div>
       <div className="mt-2 flex flex-col gap-2 sm:mt-1 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex w-full min-w-0 flex-wrap items-center gap-2 sm:w-auto sm:flex-nowrap">
-          <InlineHoverTooltip text="Choose model">
+          <InlineHoverTooltip text="选择模型">
             <select
               className="ui-input ui-control-important h-6 min-w-0 max-w-full rounded-md px-1.5 text-[10px] font-semibold text-foreground"
               aria-label="Model"
@@ -1157,7 +1157,7 @@ const AgentChatComposer = memo(function AgentChatComposer({
               }}
             >
               {modelOptions.length === 0 ? (
-                <option value="">No models found</option>
+                <option value="">未找到模型</option>
               ) : null}
               {modelOptions.map((option) => (
                 <option key={option.value} value={option.value}>
@@ -1167,7 +1167,7 @@ const AgentChatComposer = memo(function AgentChatComposer({
             </select>
           </InlineHoverTooltip>
           {allowThinking ? (
-            <InlineHoverTooltip text="Select reasoning effort">
+            <InlineHoverTooltip text="选择推理强度">
               <select
                 className="ui-input ui-control-important h-6 min-w-0 max-w-full rounded-md px-1.5 text-[10px] font-semibold text-foreground"
                 aria-label="Thinking"
@@ -1178,23 +1178,23 @@ const AgentChatComposer = memo(function AgentChatComposer({
                   onThinkingChange(nextValue ? nextValue : null);
                 }}
               >
-                <option value="">Default</option>
-                <option value="off">Off</option>
-                <option value="minimal">Minimal</option>
-                <option value="low">Low</option>
-                <option value="medium">Medium</option>
-                <option value="high">High</option>
-                <option value="xhigh">XHigh</option>
+                <option value="">默认</option>
+                <option value="off">关闭</option>
+                <option value="minimal">最低</option>
+                <option value="low">低</option>
+                <option value="medium">中</option>
+                <option value="high">高</option>
+                <option value="xhigh">极高</option>
               </select>
             </InlineHoverTooltip>
           ) : null}
         </div>
         <div className="flex w-full flex-wrap items-center justify-end gap-1.5 text-[10px] text-muted-foreground sm:ml-auto sm:w-auto sm:flex-nowrap">
-          <span className="font-mono tracking-[0.02em]">Show</span>
+          <span className="font-mono tracking-[0.02em]">显示</span>
           <button
             type="button"
             role="switch"
-            aria-label="Show tool calls"
+            aria-label="显示工具调用"
             aria-checked={toolCallingEnabled}
             className={`inline-flex h-5 shrink-0 items-center rounded-sm border px-1.5 font-mono text-[10px] tracking-[0.01em] transition ${
               toolCallingEnabled
@@ -1203,12 +1203,12 @@ const AgentChatComposer = memo(function AgentChatComposer({
             }`}
             onClick={() => onToolCallingToggle(!toolCallingEnabled)}
           >
-            Tools
+            工具
           </button>
           <button
             type="button"
             role="switch"
-            aria-label="Show thinking"
+            aria-label="显示思考过程"
             aria-checked={showThinkingTraces}
             className={`inline-flex h-5 shrink-0 items-center rounded-sm border px-1.5 font-mono text-[10px] tracking-[0.01em] transition ${
               showThinkingTraces
@@ -1217,7 +1217,7 @@ const AgentChatComposer = memo(function AgentChatComposer({
             }`}
             onClick={() => onThinkingTracesToggle(!showThinkingTraces)}
           >
-            Thinking
+            思考
           </button>
         </div>
       </div>
@@ -1544,7 +1544,7 @@ export const AgentChatPanel = ({
     const nextName = renameDraft.trim();
     const currentName = agent.name.trim();
     if (!nextName) {
-      setRenameError("Agent name is required.");
+      setRenameError("智能体名称不能为空");
       return;
     }
     if (nextName === currentName) {
@@ -1558,7 +1558,7 @@ export const AgentChatPanel = ({
     try {
       const ok = await onRename(nextName);
       if (!ok) {
-        setRenameError("Failed to rename agent.");
+        setRenameError("重命名失败");
         return;
       }
       setRenameEditing(false);
@@ -1611,7 +1611,7 @@ export const AgentChatPanel = ({
               <button
                 className="nodrag ui-btn-icon ui-btn-icon-xs agent-avatar-shuffle-btn absolute bottom-0.5 right-0.5"
                 type="button"
-                aria-label="Shuffle avatar"
+                aria-label="随机头像"
                 data-testid="agent-avatar-shuffle"
                 onClick={(event) => {
                   event.preventDefault();
@@ -1673,7 +1673,7 @@ export const AgentChatPanel = ({
                         <button
                           className="ui-btn-icon ui-btn-icon-xs agent-rename-control shrink-0"
                           type="button"
-                          aria-label="Rename agent"
+                          aria-label="重命名智能体"
                           data-testid="agent-rename-toggle"
                           onClick={beginRename}
                         >
@@ -1695,7 +1695,7 @@ export const AgentChatPanel = ({
               className="nodrag ui-btn-icon !inline-flex md:!hidden"
               type="button"
               aria-label="Expand transcript"
-              title="Expand transcript"
+              title="展开对话"
               onClick={() => setTranscriptModalOpen(true)}
             >
               <Maximize2 className="h-4 w-4" />
@@ -1704,21 +1704,21 @@ export const AgentChatPanel = ({
               className="nodrag ui-btn-primary px-2.5 py-1.5 font-mono text-[11px] font-medium tracking-[0.02em] disabled:cursor-not-allowed disabled:border-border disabled:bg-muted disabled:text-muted-foreground"
               type="button"
               data-testid="agent-new-session-toggle"
-              aria-label="Start new session"
-              title="Start new session"
+              aria-label="新建会话"
+              title="新建会话"
               onClick={() => {
                 void handleNewSession();
               }}
               disabled={newSessionDisabled}
             >
-              {newSessionBusy ? "Starting..." : "New session"}
+              {newSessionBusy ? "创建中..." : "新建会话"}
             </button>
             <button
               className="nodrag ui-btn-icon"
               type="button"
               data-testid="agent-settings-toggle"
-              aria-label="Open behavior"
-              title="Behavior"
+              aria-label="打开设置"
+              title="行为设置"
               onClick={onOpenSettings}
             >
               <Cog className="h-4 w-4" />

@@ -82,35 +82,35 @@ const AgentCreateModalContent = ({
 
         <div className="grid gap-4 px-6 py-5">
           <label className={labelClassName}>
-            Name
+            名称
             <input
-              aria-label="Agent name"
+              aria-label="智能体名称"
               value={name}
               onChange={(event) => setName(event.target.value)}
               className={`mt-1 ${fieldClassName}`}
-              placeholder="My agent"
+              placeholder="我的智能体"
             />
           </label>
           <div className="-mt-2 text-[11px] text-muted-foreground">
-            You can rename this agent from the main chat header.
+            你可以在主聊天界面重命名此智能体。
           </div>
           <div className="grid justify-items-center gap-2 border-t border-border/40 pt-3">
-            <div className={labelClassName}>Choose avatar</div>
+            <div className={labelClassName}>选择头像</div>
             <AgentAvatar
               seed={avatarSeed}
-              name={name.trim() || "New Agent"}
+              name={name.trim() || "新智能体"}
               size={64}
               isSelected
             />
             <button
               type="button"
-              aria-label="Shuffle avatar selection"
+              aria-label="随机头像"
               className="ui-btn-secondary inline-flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground"
               onClick={() => setAvatarSeed(randomUUID())}
               disabled={busy}
             >
               <Shuffle className="h-3.5 w-3.5" />
-              Shuffle
+              随机
             </button>
           </div>
 
@@ -122,13 +122,13 @@ const AgentCreateModalContent = ({
         </div>
 
         <div className="flex items-center justify-between border-t border-border/45 px-6 pb-4 pt-5">
-          <div className="text-[11px] text-muted-foreground">Authority can be configured after launch.</div>
+          <div className="text-[11px] text-muted-foreground">权限可在创建后配置。</div>
           <button
             type="submit"
             className="ui-btn-primary px-3 py-1.5 font-mono text-[11px] font-semibold tracking-[0.06em] disabled:cursor-not-allowed disabled:border-border disabled:bg-muted disabled:text-muted-foreground"
             disabled={!canSubmit || busy}
           >
-            {busy ? "Launching..." : "Launch agent"}
+            {busy ? "创建中..." : "创建智能体"}
           </button>
         </div>
       </form>

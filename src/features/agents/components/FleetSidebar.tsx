@@ -20,9 +20,9 @@ type FleetSidebarProps = {
 };
 
 const FILTER_OPTIONS: Array<{ value: FocusFilter; label: string; testId: string }> = [
-  { value: "all", label: "All", testId: "fleet-filter-all" },
-  { value: "running", label: "Running", testId: "fleet-filter-running" },
-  { value: "approvals", label: "Approvals", testId: "fleet-filter-approvals" },
+  { value: "all", label: "全部", testId: "fleet-filter-all" },
+  { value: "running", label: "运行中", testId: "fleet-filter-running" },
+  { value: "approvals", label: "待审批", testId: "fleet-filter-approvals" },
 ];
 
 export const FleetSidebar = ({
@@ -75,7 +75,7 @@ export const FleetSidebar = ({
       data-testid="fleet-sidebar"
     >
       <div className="flex items-center justify-between gap-2 px-1">
-        <p className="console-title type-page-title text-foreground">Agents ({agents.length})</p>
+        <p className="console-title type-page-title text-foreground">智能体 ({agents.length})</p>
         <button
           type="button"
           data-testid="fleet-new-agent-button"
@@ -83,7 +83,7 @@ export const FleetSidebar = ({
           onClick={onCreateAgent}
           disabled={createDisabled || createBusy}
         >
-          {createBusy ? "Creating..." : "New agent"}
+          {createBusy ? "创建中..." : "新建智能体"}
         </button>
       </div>
 
@@ -108,7 +108,7 @@ export const FleetSidebar = ({
 
       <div ref={scrollContainerRef} className="ui-scroll min-h-0 flex-1 overflow-auto">
         {agents.length === 0 ? (
-          <EmptyStatePanel title="No agents available." compact className="p-3 text-xs" />
+          <EmptyStatePanel title="暂无智能体" compact className="p-3 text-xs" />
         ) : (
           <div className="flex flex-col gap-2.5">
             {agents.map((agent) => {
@@ -157,7 +157,7 @@ export const FleetSidebar = ({
                       </span>
                       {agent.awaitingUserInput ? (
                         <span className={`ui-badge ${NEEDS_APPROVAL_BADGE_CLASS}`} data-status="approval">
-                          Needs approval
+                          待审批
                         </span>
                       ) : null}
                     </div>

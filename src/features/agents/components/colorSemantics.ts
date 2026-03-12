@@ -2,9 +2,9 @@ import type { AgentStatus } from "@/features/agents/state/store";
 import type { GatewayStatus } from "@/lib/gateway/gateway-status";
 
 export const AGENT_STATUS_LABEL: Record<AgentStatus, string> = {
-  idle: "Idle",
-  running: "Running",
-  error: "Error",
+  idle: "空闲",
+  running: "运行中",
+  error: "错误",
 };
 
 export const AGENT_STATUS_BADGE_CLASS: Record<AgentStatus, string> = {
@@ -14,11 +14,11 @@ export const AGENT_STATUS_BADGE_CLASS: Record<AgentStatus, string> = {
 };
 
 export const GATEWAY_STATUS_LABEL: Record<GatewayStatus, string> = {
-  disconnected: "Disconnected",
-  connecting: "Connecting",
-  connected: "Connected",
-  reconnecting: "Reconnecting",
-  error: "Error",
+  disconnected: "已断开",
+  connecting: "连接中",
+  connected: "已连接",
+  reconnecting: "重连中",
+  error: "错误",
 };
 
 export const GATEWAY_STATUS_BADGE_CLASS: Record<GatewayStatus, string> = {

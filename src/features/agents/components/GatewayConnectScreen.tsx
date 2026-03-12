@@ -143,31 +143,31 @@ export const GatewayConnectScreen = ({
       return "Studio is connecting to OpenClaw…";
     }
     if (status === "reconnecting") {
-      return "Studio lost the gateway connection and is retrying…";
+      return "Studio 与网关断开，正在重试…";
     }
     if (status === "error") {
-      return "Studio could not connect to the saved gateway settings.";
+      return "Studio 无法连接到已保存的网关设置。";
     }
-    return "Choose how this Studio should reach OpenClaw.";
+    return "选择 Studio 如何连接到 OpenClaw。";
   }, [status]);
   const statusSubcopy = useMemo(() => {
     const normalizedReason = statusReason?.trim() ?? "";
     if (normalizedReason === "gateway_closed") {
-      return "The gateway socket closed. Studio will keep retrying until it reconnects.";
+      return "网关连接已关闭。Studio 将持续重试直到重新连接。";
     }
     if (normalizedReason) return normalizedReason;
     if (selectedScenario === "same-cloud-host") {
-      return "Separate the two links: how you open Studio, and how Studio reaches OpenClaw.";
+      return "分离两个链接：你如何打开 Studio，以及 Studio 如何连接到 OpenClaw。";
     }
     if (selectedScenario === "remote-gateway") {
-      return "On your laptop, Studio stays local. Only the upstream gateway needs to be remote.";
+      return "在你的笔记本上，Studio 保持本地。只有上游网关需要远程。";
     }
-    return "When Studio and OpenClaw share a host, the upstream should usually stay on localhost.";
+    return "当 Studio 和 OpenClaw 共享主机时，上游通常应保持在 localhost。";
   }, [selectedScenario, statusReason]);
   const actionBusy = saving || testing || disconnecting;
-  const saveLabel = saving ? "Saving…" : "Save settings";
-  const testLabel = testing ? "Testing…" : "Test connection";
-  const disconnectLabel = disconnecting ? "Disconnecting…" : "Disconnect";
+  const saveLabel = saving ? "保存中…" : "保存设置";
+  const testLabel = testing ? "测试中…" : "测试连接";
+  const disconnectLabel = disconnecting ? "断开中…" : "断开连接";
   const statusDotClass =
     status === "connected"
       ? "ui-dot-status-connected"
@@ -175,10 +175,10 @@ export const GatewayConnectScreen = ({
         ? "ui-dot-status-connecting"
         : "ui-dot-status-disconnected";
   const tokenHelper = hasStoredToken
-    ? "A token is already stored on this Studio host. Leave this blank to keep it."
+    ? "此 Studio 主机已存储 token。留空以保留。"
     : localGatewayDefaultsHasToken
-      ? "A local OpenClaw token is available on this host. Leave this blank to use it."
-      : "Enter the gateway token Studio should use.";
+      ? "此主机上有本地 OpenClaw token 可用。留空以使用。"
+      : "输入 Studio 应使用的网关 token。";
   const remoteStudio = isStudioLikelyRemote(installContext);
 
   const setScenario = (value: StudioSetupScenario) => {
@@ -216,7 +216,7 @@ export const GatewayConnectScreen = ({
           className="ui-btn-ghost h-7 px-2 text-[11px]"
           onClick={() => void copyCommand(params.value)}
         >
-          {copyStatus === "copied" ? "Copied" : copyStatus === "failed" ? "Copy failed" : "Copy"}
+          {copyStatus === "copied" ? "已复制" : copyStatus === "failed" ? "复制失败" : "复制"}
         </button>
       </div>
       <div className="ui-command-surface flex items-center gap-2 rounded-md px-3 py-2">
@@ -228,7 +228,7 @@ export const GatewayConnectScreen = ({
           className="ui-btn-icon ui-command-copy h-7 w-7 shrink-0"
           onClick={() => void copyCommand(params.value)}
           aria-label={`Copy ${params.label}`}
-          title="Copy command"
+          title="复制命令"
         >
           {copyStatus === "copied" ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
         </button>
@@ -414,7 +414,7 @@ export const GatewayConnectScreen = ({
               {commandField({
                 value: studioTunnelCommand,
                 label: "Fallback: SSH tunnel",
-                helper: "Use this if Tailscale is not available yet.",
+                helper: "如果 Tailscale 尚不可用，使用此选项。",
               })}
               {remoteStudio && installContext.tailscale.loggedIn === false ? (
                 <div className="ui-card rounded-md px-3 py-3 text-sm text-muted-foreground">
@@ -441,7 +441,7 @@ export const GatewayConnectScreen = ({
               </p>
               {commandField({
                 value: gatewayServeCommand,
-                label: "On the gateway host",
+                label: "在网关主机上",
                 helper: "In Studio, use wss://<gateway-host>.ts.net plus your gateway token.",
               })}
               {commandField({
@@ -467,7 +467,7 @@ export const GatewayConnectScreen = ({
               </p>
               {commandField({
                 value: localGatewayCommand,
-                label: "Start OpenClaw on this host",
+                label: "在此主机上启动 OpenClaw",
                 helper: "Use the same machine for both processes, even if that machine is a cloud VM.",
               })}
               <div className="flex flex-wrap gap-2">
